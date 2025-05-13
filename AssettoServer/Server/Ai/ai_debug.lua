@@ -38,6 +38,8 @@ function script.draw3D()
         if car.position:closerToThan(ac.getCameraPosition(), 200) then
             local message = "S:" .. debugInfo.CurrentSpeed .. "\nT:" .. debugInfo.TargetSpeed .. "\nM:" .. debugInfo.MaxSpeed .. "\nAO:" .. debugInfo.ClosestAiObstacle
             render.debugText(car.position, message, rgbm.colors.white, 1.5, render.FontAlign.Left)
+            render.debugArrow(car.position, car.position + car.direction * 2, rgbm.colors.white, 1.5)
+        end
         end
     end
 end

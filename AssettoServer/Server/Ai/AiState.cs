@@ -63,6 +63,10 @@ public class AiState
     private float _endIndicatorDistance;
     private float _minObstacleDistance;
 
+    private float _laneDeviationPhase;
+    private float _laneDeviationSpeed;
+    private float _laneDeviationAmplitude;
+
     private readonly ACServerConfiguration _configuration;
     private readonly SessionManager _sessionManager;
     private readonly EntryCarManager _entryCarManager;
@@ -171,6 +175,9 @@ public class AiState
         _endIndicatorDistance = 0;
         _lastTick = _sessionManager.ServerTimeMilliseconds;
         _minObstacleDistance = Random.Shared.Next(8, 13);
+        _laneDeviationPhase = (float)(Random.Shared.NextDouble() * MathF.PI * 2);
+        _laneDeviationSpeed = (0.2f + (float)Random.Shared.NextDouble() * 0.3f) * 0.15f;
+        _laneDeviationAmplitude = 0.3f + (float)Random.Shared.NextDouble() * 0.3f;
         SpawnCounter++;
         Initialized = true;
         Update();
@@ -401,6 +408,15 @@ public class AiState
         return false;
     }
 
+    private EntryCar? FindPerpidicularAI(float sideDistance = 2.5f, float forwardDistance = 5f)
+    {
+        Vector3 currentPosition = Status.Position;
+        Vector3 forward = Vector3.Normalize(Status.Velocity.LengthSquared() > 0.1f ? Status.Velocity : Vector3.UnitX);
+        Vector3 right = Vector3.Normalize(Vector3.Cross(Vector3.UnitY, forward));
+
+        f
+    }
+
     private (EntryCar? entryCar, float distance) FindClosestPlayerObstacle()
     {
         if (!ShouldIgnorePlayerObstacles())
@@ -626,11 +642,19 @@ public class AiState
         }
 
         CatmullRom.CatmullRomPoint smoothPos = CatmullRom.Evaluate(ops.Points[CurrentSplinePointId].Position, 
-            ops.Points[nextPoint].Position, 
-            _startTangent, 
-            _endTangent, 
-            _currentVecProgress / _currentVecLength);
-            
+                ops.Points[nextPoint].Position, 
+                _startTangent, 
+                _endTangent, 
+                _currentVecProgress / _currentVecLength);
+
+        float deviation = MathF.Sin(_laneDeviationPhase + currentTime * 0.001f * _laneDeviationSpeed * MathF.Tau) * _laneDeviationAmplitude;
+
+        Vector3 forward = Vector3.Normalize(ops.Points[nextPoint].Position - ops.Points[CurrentSplinePointId].Position);
+        Vector3 right = Vector3.Normalize(Vector3.Cross(Vector3.UnitY, forward));
+
+        // Apply deviation to the position
+        Vector3 deviatedPosition = smoothPos.Position + right * deviation;
+
         Vector3 rotation = new Vector3
         {
             X = MathF.Atan2(smoothPos.Tangent.Z, smoothPos.Tangent.X) - MathF.PI / 2,
@@ -642,7 +666,7 @@ public class AiState
         byte encodedTyreAngularSpeed =  (byte) (Math.Clamp(MathF.Round(MathF.Log10(tyreAngularSpeed + 1.0f) * 20.0f) * Math.Sign(tyreAngularSpeed), -100.0f, 154.0f) + 100.0f);
 
         Status.Timestamp = _sessionManager.ServerTimeMilliseconds;
-        Status.Position = smoothPos.Position with { Y = smoothPos.Position.Y + EntryCar.AiSplineHeightOffsetMeters };
+        Status.Position = deviatedPosition with { Y = smoothPos.Position.Y + EntryCar.AiSplineHeightOffsetMeters };
         Status.Rotation = rotation;
         Status.Velocity = smoothPos.Tangent * CurrentSpeed;
         Status.SteerAngle = 127;

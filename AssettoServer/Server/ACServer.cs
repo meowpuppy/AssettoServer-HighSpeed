@@ -62,7 +62,7 @@ public class ACServer : CriticalBackgroundService
         IHostApplicationLifetime applicationLifetime) : base(applicationLifetime)
     {
         Log.Information("Starting server");
-            
+
         _configuration = configuration;
         _sessionManager = sessionManager;
         _entryCarManager = entryCarManager;
