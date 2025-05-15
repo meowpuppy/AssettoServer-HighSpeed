@@ -43,6 +43,22 @@ public class AiState
     public float ClosestAiObstacleDistance { get; private set; }
     public EntryCar EntryCar { get; }
 
+    private bool _isScared = false;
+    private float _scareFade = 0f; // 0 = not scared, 1 = fully scared
+    private float _scareTarget = 0f;
+    private float _lastMoveDir = 0f;
+    private const float ScareFadeInSpeed = 5.0f;  // seconds to fade in
+    private const float ScareFadeOutSpeed = 10.0f; // seconds to fade out
+
+    private bool _isChangingLane = false;
+    private float _laneChangeProgress = 0f; // 0 = start, 1 = complete
+    private int _laneChangeTargetPointId = -1;
+    private float _laneChangeDuration = 1.5f; // seconds for lane change
+    private long _laneChangeStartTime = 0;
+    private bool _laneChangeToLeft = false;
+    private const long LaneChangeSignalTimeout = 4000; // ms
+    private long _laneChangeSignalStart = 0;
+
     private const float WalkingSpeed = 10 / 3.6f;
 
     private Vector3 _startTangent;
@@ -177,7 +193,7 @@ public class AiState
         _minObstacleDistance = Random.Shared.Next(8, 13);
         _laneDeviationPhase = (float)(Random.Shared.NextDouble() * MathF.PI * 2);
         _laneDeviationSpeed = (0.2f + (float)Random.Shared.NextDouble() * 0.3f) * 0.15f;
-        _laneDeviationAmplitude = 0.3f + (float)Random.Shared.NextDouble() * 0.3f;
+        _laneDeviationAmplitude = 0.2f + (float)Random.Shared.NextDouble() * 0.2f;
         SpawnCounter++;
         Initialized = true;
         Update();
@@ -189,7 +205,7 @@ public class AiState
             throw new InvalidOperationException("Cannot get next spline point");
 
         var points = _spline.Points;
-        
+
         if (_junctionEvaluator.TryPrevious(CurrentSplinePointId, out var previousPointId))
         {
             _startTangent = (points[nextPointId].Position - points[previousPointId].Position) * 0.5f;
@@ -408,15 +424,6 @@ public class AiState
         return false;
     }
 
-    private EntryCar? FindPerpidicularAI(float sideDistance = 2.5f, float forwardDistance = 5f)
-    {
-        Vector3 currentPosition = Status.Position;
-        Vector3 forward = Vector3.Normalize(Status.Velocity.LengthSquared() > 0.1f ? Status.Velocity : Vector3.UnitX);
-        Vector3 right = Vector3.Normalize(Vector3.Cross(Vector3.UnitY, forward));
-
-        f
-    }
-
     private (EntryCar? entryCar, float distance) FindClosestPlayerObstacle()
     {
         if (!ShouldIgnorePlayerObstacles())
@@ -611,6 +618,76 @@ public class AiState
         SetTargetSpeed(speed, EntryCar.AiDeceleration, EntryCar.AiAcceleration);
     }
 
+    public bool IsPlayerCarInBoundingArea(Vector3 center, float radius)
+    {
+        foreach (var playerCar in _entryCarManager.EntryCars)
+        {
+            if (playerCar.Client?.HasSentFirstUpdate == true)
+            {
+                float distance = Vector3.Distance(playerCar.Status.Position, center);
+                if (distance < radius)
+                {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    public bool RequestLaneChange(bool toLeft)
+    {
+        if (_isChangingLane) return false;
+
+        var lanes = _spline.GetLanes(CurrentSplinePointId);
+        if (lanes.Length <= 1) return false;
+
+        int currentLaneIndex = Array.IndexOf(lanes.ToArray(), CurrentSplinePointId);
+        if (currentLaneIndex == -1) return false;
+
+        int targetLaneIndex = toLeft ? currentLaneIndex - 1 : currentLaneIndex + 1;
+        if (targetLaneIndex < 0 || targetLaneIndex >= lanes.Length) return false;
+
+        int targetPointId = lanes[targetLaneIndex];
+
+        foreach (var ai in _entryCarManager.EntryCars)
+        {
+            if (ai == EntryCar || ai.Status == null) continue;
+            if (Vector3.Distance(ai.Status.Position, _spline.Points[targetPointId].Position) < 5f)
+            {
+                _indicator = toLeft ? CarStatusFlags.IndicateLeft : CarStatusFlags.IndicateRight;
+                _laneChangeSignalStart = _sessionManager.ServerTimeMilliseconds;
+                AdjustSpeedForGap(ai.Status.Position, toLeft);
+                return false;
+            }
+        }
+
+        // No car in the way, start lane change
+        _isChangingLane = true;
+        _laneChangeProgress = 0f;
+        _laneChangeTargetPointId = targetPointId;
+        _laneChangeStartTime = _sessionManager.ServerTimeMilliseconds;
+        _laneChangeToLeft = toLeft;
+        _indicator = toLeft ? CarStatusFlags.IndicateLeft : CarStatusFlags.IndicateRight;
+        _laneChangeSignalStart = _sessionManager.ServerTimeMilliseconds;
+        return true;
+    }
+
+    private void AdjustSpeedForGap(Vector3 otherCarPos, bool toLeft)
+    {
+        float myZ = Status.Position.Z;
+        float otherZ = otherCarPos.Z;
+        float gap = Math.Abs(myZ - otherZ);
+
+        if (gap < 5f)
+        {
+            SetTargetSpeed(Math.Max(CurrentSpeed - 2f, 5f));
+        }
+        else if (gap > 10f)
+        {
+            SetTargetSpeed(Math.Min(CurrentSpeed + 2f, MaxSpeed));
+        }
+    }
+
     public void Update()
     {
         if (!Initialized)
@@ -625,7 +702,7 @@ public class AiState
         if (Acceleration != 0)
         {
             CurrentSpeed += Acceleration * (dt / 1000.0f);
-                
+
             if ((Acceleration < 0 && CurrentSpeed < TargetSpeed) || (Acceleration > 0 && CurrentSpeed > TargetSpeed))
             {
                 CurrentSpeed = TargetSpeed;
@@ -641,10 +718,10 @@ public class AiState
             return;
         }
 
-        CatmullRom.CatmullRomPoint smoothPos = CatmullRom.Evaluate(ops.Points[CurrentSplinePointId].Position, 
-                ops.Points[nextPoint].Position, 
-                _startTangent, 
-                _endTangent, 
+        CatmullRom.CatmullRomPoint smoothPos = CatmullRom.Evaluate(ops.Points[CurrentSplinePointId].Position,
+                ops.Points[nextPoint].Position,
+                _startTangent,
+                _endTangent,
                 _currentVecProgress / _currentVecLength);
 
         float deviation = MathF.Sin(_laneDeviationPhase + currentTime * 0.001f * _laneDeviationSpeed * MathF.Tau) * _laneDeviationAmplitude;
@@ -663,7 +740,122 @@ public class AiState
         };
 
         float tyreAngularSpeed = GetTyreAngularSpeed(CurrentSpeed, EntryCar.TyreDiameterMeters);
-        byte encodedTyreAngularSpeed =  (byte) (Math.Clamp(MathF.Round(MathF.Log10(tyreAngularSpeed + 1.0f) * 20.0f) * Math.Sign(tyreAngularSpeed), -100.0f, 154.0f) + 100.0f);
+        byte encodedTyreAngularSpeed = (byte)(Math.Clamp(MathF.Round(MathF.Log10(tyreAngularSpeed + 1.0f) * 20.0f) * Math.Sign(tyreAngularSpeed), -100.0f, 154.0f) + 100.0f);
+
+
+
+
+
+
+
+
+        // --- SCARE LOGIC START ---
+        bool playerNearby = IsPlayerCarInBoundingArea(Status.Position, 3f);
+        float scareFactor = 0f;
+        float moveDir = _lastMoveDir;
+
+        if (playerNearby)
+        {
+            EntryCar? closestPlayer = null;
+            float minDist = float.MaxValue;
+            foreach (var playerCar in _entryCarManager.EntryCars)
+            {
+                if (playerCar.Client?.HasSentFirstUpdate == true)
+                {
+                    float dist = Vector3.Distance(playerCar.Status.Position, Status.Position);
+                    if (dist < minDist)
+                    {
+                        minDist = dist;
+                        closestPlayer = playerCar;
+                    }
+                }
+            }
+
+            if (closestPlayer != null)
+            {
+                Vector3 toPlayer = Vector3.Normalize(closestPlayer.Status.Position - smoothPos.Position);
+                float sideDot = Vector3.Dot(right, toPlayer);
+
+                scareFactor = Math.Clamp((8.0f - minDist) / 8.0f, 0, 1) * Math.Clamp((closestPlayer.Status.Velocity.Length() - 40.0f) / 30.0f, 0, 1);
+
+                moveDir = sideDot > 0 ? -1f : 1f;
+            }
+        }
+
+        if (scareFactor > 0.01f)
+        {
+            if (!_isScared && Random.Shared.Next(25) == 0)
+            {
+                _isScared = true;
+                _scareTarget = scareFactor;
+                _lastMoveDir = moveDir;
+            }
+            else
+            {
+                _scareTarget = MathF.Max(_scareTarget, scareFactor);
+            }
+        }
+        else
+        {
+            if (_isScared)
+            {
+                _isScared = false;
+                _scareTarget = 0f;
+            }
+        }
+
+        float fadeSpeed = _isScared ? ScareFadeInSpeed : ScareFadeOutSpeed;
+        if (_scareFade < _scareTarget)
+            _scareFade = MathF.Min(_scareTarget, _scareFade + (dt / 1000.0f) / fadeSpeed);
+        else if (_scareFade > _scareTarget)
+            _scareFade = MathF.Max(_scareTarget, _scareFade - (dt / 1000.0f) / fadeSpeed);
+
+        if (_scareFade > 0.001f)
+        {
+            deviatedPosition += right * _lastMoveDir * _scareFade * 6f;
+        }
+        // --- SCARE LOGIC END ---
+
+
+
+
+
+
+
+
+
+
+        // --- LANE CHANGE FADE LOGIC ---
+        if (_isChangingLane && _laneChangeTargetPointId != -1)
+        {
+            float elapsed = (_sessionManager.ServerTimeMilliseconds - _laneChangeStartTime) / 1000.0f;
+            _laneChangeProgress = Math.Clamp(elapsed / _laneChangeDuration, 0f, 1f);
+
+            var targetPos = _spline.Points[_laneChangeTargetPointId].Position;
+            deviatedPosition = Vector3.Lerp(deviatedPosition, targetPos, _laneChangeProgress);
+
+            if (_laneChangeProgress >= 1f)
+            {
+                // Complete lane change
+                //Teleport(_laneChangeTargetPointId);
+                _isChangingLane = false;
+                _laneChangeTargetPointId = -1;
+                _indicator = 0;
+            }
+        }
+        else if (_indicator != 0 && _sessionManager.ServerTimeMilliseconds - _laneChangeSignalStart > LaneChangeSignalTimeout)
+        {
+            _indicator = 0;
+        }
+
+        if (!_isChangingLane && _sessionManager.ServerTimeMilliseconds - _laneChangeSignalStart > LaneChangeSignalTimeout)
+        {
+            if (Random.Shared.Next(100) < 5)
+            {
+                bool toLeft = Random.Shared.Next(2) == 0;
+                RequestLaneChange(toLeft);
+            }
+        }
 
         Status.Timestamp = _sessionManager.ServerTimeMilliseconds;
         Status.Position = deviatedPosition with { Y = smoothPos.Position.Y + EntryCar.AiSplineHeightOffsetMeters };
@@ -685,7 +877,7 @@ public class AiState
                             | _indicator;
         Status.Gear = 2;
     }
-        
+
     private static float GetTyreAngularSpeed(float speed, float wheelDiameter)
     {
         return speed / (MathF.PI * wheelDiameter) * 6;
