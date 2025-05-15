@@ -848,14 +848,14 @@ public class AiState
             _indicator = 0;
         }
 
-        if (!_isChangingLane && _sessionManager.ServerTimeMilliseconds - _laneChangeSignalStart > LaneChangeSignalTimeout)
-        {
-            if (Random.Shared.Next(100) < 5)
-            {
-                bool toLeft = Random.Shared.Next(2) == 0;
-                RequestLaneChange(toLeft);
-            }
-        }
+        //if (!_isChangingLane && _sessionManager.ServerTimeMilliseconds - _laneChangeSignalStart > LaneChangeSignalTimeout)
+        //{
+        //    if (Random.Shared.Next(100) < 5)
+        //    {
+        //        bool toLeft = Random.Shared.Next(2) == 0;
+        //        RequestLaneChange(toLeft);
+        //    }
+        //}
 
         Status.Timestamp = _sessionManager.ServerTimeMilliseconds;
         Status.Position = deviatedPosition with { Y = smoothPos.Position.Y + EntryCar.AiSplineHeightOffsetMeters };
