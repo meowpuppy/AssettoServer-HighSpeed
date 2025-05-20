@@ -76,7 +76,26 @@ public class AiSpline : IDisposable
         var count = new Pointer<int>(offset).Value;
         return new Pointer<int>(offset + sizeof(int)).ToSpan(count);
     }
-    
+
+    // get current lane index using the point id
+    public int GetLaneIndex(int pointId)
+    {
+        if (pointId < 0) return -1;
+        var lanesId = Points[pointId].LanesId;
+        if (lanesId < 0) return -1;
+        var offset = _fileAccessor.Pointer.Address + _lanesOffset + lanesId;
+        var count = new Pointer<int>(offset).Value;
+        var lanes = new Pointer<int>(offset + sizeof(int)).ToSpan(count);
+        for (int i = 0; i < count; i++)
+        {
+            if (lanes[i] == pointId)
+            {
+                return i;
+            }
+        }
+        return -1;
+    }
+
     public (int PointId, float DistanceSquared) WorldToSpline(Vector3 position)
     {
         var nearest = KdTree.NearestNeighbors(position, 1);
