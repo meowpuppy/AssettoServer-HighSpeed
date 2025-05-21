@@ -55,10 +55,14 @@ public class AiState
     private int _laneChangeStartIndex;
     private int _laneChangeTargetIndex;
     private float _laneChangeProgress = 0f;
-    private float _laneChangeDuration = 5.0f; // seconds, adjust as needed
+    private float _laneChangeDuration = Random.Shared.Next(2, 7); // seconds, adjust as needed
 
-    private const long LaneChangeCooldownMs = 10000;
+    private long _laneChangeCooldownMs = 10000;
     private long _lastLaneChangeTime = 0;
+
+    // Add these fields to the class (replace the existing LaneChangeCooldownMs and _lastLaneChangeTime)
+    private static readonly int MinLaneChangeCooldownMs = 30_000;   // 30 seconds
+    private static readonly int MaxLaneChangeCooldownMs = 120_000;  // 2 minutes
 
     private int _currentLaneIndex = 0;
 
@@ -128,6 +132,8 @@ public class AiState
         // set the _currentlaneIndex to the current lane of the ai using the spline point id
         _currentLaneIndex = _spline.GetLaneIndex(CurrentSplinePointId);
 
+        SetNextLaneChangeCooldown();
+
         _lastTick = _sessionManager.ServerTimeMilliseconds;
     }
 
@@ -185,6 +191,8 @@ public class AiState
         if (EntryCar.MaxAiSafetyDistanceMetersSquared.HasValue)
             maxDist = EntryCar.MaxAiSafetyDistanceMetersSquared.Value;
 
+        SetNextLaneChangeCooldown();
+
         SpawnProtectionEnds = _sessionManager.ServerTimeMilliseconds + Random.Shared.Next(EntryCar.AiMinSpawnProtectionTimeMilliseconds, EntryCar.AiMaxSpawnProtectionTimeMilliseconds);
         SafetyDistanceSquared = Random.Shared.Next((int)Math.Round(minDist * (1.0f / _configuration.Extra.AiParams.TrafficDensity)),
             (int)Math.Round(maxDist * (1.0f / _configuration.Extra.AiParams.TrafficDensity)));
@@ -200,7 +208,7 @@ public class AiState
         _minObstacleDistance = Random.Shared.Next(8, 13);
         _laneDeviationPhase = (float)(Random.Shared.NextDouble() * MathF.PI * 2);
         _laneDeviationSpeed = (0.2f + (float)Random.Shared.NextDouble() * 0.3f) * 0.15f;
-        _laneDeviationAmplitude = 0.3f + (float)Random.Shared.NextDouble() * 0.15f;
+        _laneDeviationAmplitude = 0.15f + (float)Random.Shared.NextDouble() * 0.15f;
         SpawnCounter++;
         Initialized = true;
         Update();
@@ -714,47 +722,59 @@ public class AiState
 
     private void TryLaneChange(bool direction)
     {
-        var currentLanes = _spline.GetLanes(CurrentSplinePointId);
+        try
+        {
+            var currentLanes = _spline.GetLanes(CurrentSplinePointId);
 
-        var currentLane = _spline.GetLaneIndex(CurrentSplinePointId);
+            var currentLane = _spline.GetLaneIndex(CurrentSplinePointId);
 
-        if (currentLanes.Length <= 1 || _isChangingLane)
+            if (currentLanes.Length <= 1 || _isChangingLane)
+                return;
+
+            //Log.Information("AI {id} Is in Current Lane {Lane}", this.EntryCar.SessionId, currentLane);
+
+
+            var targetLane = direction ? currentLane + 1 : currentLane - 1;
+
+            var nextPoint = _junctionEvaluator.Next(CurrentSplinePointId);
+            if (nextPoint < 0)
+                return;
+
+            var nextLanes = _spline.GetLanes(nextPoint);
+            if (_spline.GetLaneIndex(CurrentSplinePointId) >= nextLanes.Length || targetLane >= nextLanes.Length)
+                return; // Prevent index out of range
+
+            // Calculate progress
+            float t = _currentVecProgress / _currentVecLength;
+
+            //Log.Information("Current Lanes Array: {CurrentLanes}", string.Join(", ", currentLanes.ToArray()));
+
+            // Compute positions using actual spline point IDs
+            int currentLaneId = currentLanes[currentLane];
+            int targetLaneId = currentLanes[targetLane];
+            int nextCurrentLaneId = nextLanes[currentLane];
+            int nextTargetLaneId = nextLanes[targetLane];
+
+            Vector3 startPos = Vector3.Lerp(_spline.Points[currentLaneId].Position, _spline.Points[nextCurrentLaneId].Position, t);
+            Vector3 targetPos = Vector3.Lerp(_spline.Points[targetLaneId].Position, _spline.Points[nextTargetLaneId].Position, t);
+
+            // Start lane change
+            _isChangingLane = true;
+            _laneChangeStartIndex = currentLane;
+            _laneChangeTargetIndex = targetLane;
+            _laneChangeProgress = 0f;
+
+            //Log.Debug("AI {SessionId} started lane change to {Lane}", EntryCar.SessionId, targetLane);
+        } catch (IndexOutOfRangeException e)
+        {
             return;
+        }
 
-        Log.Information("AI {id} Is in Current Lane {Lane}", this.EntryCar.SessionId, currentLane);
+    }
 
-
-        var targetLane = direction ? currentLane + 1 : currentLane - 1;
-
-        var nextPoint = _junctionEvaluator.Next(CurrentSplinePointId);
-        if (nextPoint < 0)
-            return;
-
-        var nextLanes = _spline.GetLanes(nextPoint);
-        if (_spline.GetLaneIndex(CurrentSplinePointId) >= nextLanes.Length || targetLane >= nextLanes.Length)
-            return; // Prevent index out of range
-
-        // Calculate progress
-        float t = _currentVecProgress / _currentVecLength;
-
-        Log.Information("Current Lanes Array: {CurrentLanes}", string.Join(", ", currentLanes.ToArray()));
-
-        // Compute positions using actual spline point IDs
-        int currentLaneId = currentLanes[currentLane];
-        int targetLaneId = currentLanes[targetLane];
-        int nextCurrentLaneId = nextLanes[currentLane];
-        int nextTargetLaneId = nextLanes[targetLane];
-
-        Vector3 startPos = Vector3.Lerp(_spline.Points[currentLaneId].Position, _spline.Points[nextCurrentLaneId].Position, t);
-        Vector3 targetPos = Vector3.Lerp(_spline.Points[targetLaneId].Position, _spline.Points[nextTargetLaneId].Position, t);
-
-        // Start lane change
-        _isChangingLane = true;
-        _laneChangeStartIndex = currentLane;
-        _laneChangeTargetIndex = targetLane;
-        _laneChangeProgress = 0f;
-
-        Log.Debug("AI {SessionId} started lane change to {Lane}", EntryCar.SessionId, targetLane);
+    private void SetNextLaneChangeCooldown()
+    {
+        _laneChangeCooldownMs = Random.Shared.Next(MinLaneChangeCooldownMs, MaxLaneChangeCooldownMs + 1);
     }
 
     private void HandlePlayerFlash(Vector3 behind)
@@ -825,7 +845,7 @@ public class AiState
 
         HandlePlayerFlash(behind);
 
-        if (!_isChangingLane && _sessionManager.ServerTimeMilliseconds - _lastLaneChangeTime > LaneChangeCooldownMs)
+        if (!_isChangingLane && _sessionManager.ServerTimeMilliseconds - _lastLaneChangeTime > _laneChangeCooldownMs)
         {
             // Random chance to consider a lane change
             if (Random.Shared.NextDouble() < 0.01)
@@ -833,6 +853,8 @@ public class AiState
                 // Randomly pick left or right
                 bool direction = Random.Shared.Next(2) == 0;
                 TryLaneChange(direction);
+                _lastLaneChangeTime = _sessionManager.ServerTimeMilliseconds;
+                SetNextLaneChangeCooldown();
             }
         }
 
@@ -846,23 +868,33 @@ public class AiState
             _laneChangeProgress = MathF.Min(_laneChangeProgress, 1.0f);
 
             var lanes = _spline.GetLanes(CurrentSplinePointId);
-            Vector3 startLanePos = _spline.Points[lanes[_laneChangeStartIndex]].Position;
-            Vector3 targetLanePos = _spline.Points[lanes[_laneChangeTargetIndex]].Position;
 
-            // Interpolate laterally between lanes
-            deviatedPosition = Vector3.Lerp(startLanePos, targetLanePos, _laneChangeProgress)
-                + forward * (_currentVecProgress / _currentVecLength) * _currentVecLength;
-
-            if (_laneChangeProgress >= 1.0f)
+            // Bounds check
+            if (_laneChangeStartIndex < 0 || _laneChangeStartIndex >= lanes.Length ||
+                _laneChangeTargetIndex < 0 || _laneChangeTargetIndex >= lanes.Length)
             {
-                // Finish lane change
+                // Abort lane change if indices are invalid
                 _isChangingLane = false;
-                _currentLaneIndex = _laneChangeTargetIndex;
-                CurrentSplinePointId = lanes[_currentLaneIndex];
-                Log.Debug("AI {SessionId} completed lane change to {Lane}", EntryCar.SessionId, _currentLaneIndex);
+            }
+            else
+            {
+                Vector3 startLanePos = _spline.Points[lanes[_laneChangeStartIndex]].Position;
+                Vector3 targetLanePos = _spline.Points[lanes[_laneChangeTargetIndex]].Position;
+
+                // Interpolate laterally between lanes
+                deviatedPosition = Vector3.Lerp(startLanePos, targetLanePos, _laneChangeProgress)
+                    + forward * (_currentVecProgress / _currentVecLength) * _currentVecLength;
+
+                if (_laneChangeProgress >= 1.0f)
+                {
+                    // Finish lane change
+                    _isChangingLane = false;
+                    _currentLaneIndex = _laneChangeTargetIndex;
+                    CurrentSplinePointId = lanes[_currentLaneIndex];
+                    //Log.Debug("AI {SessionId} completed lane change to {Lane}", EntryCar.SessionId, _currentLaneIndex);
+                }
             }
         }
-
 
         Vector3 rotation = new Vector3
         {
