@@ -785,10 +785,16 @@ public class AiState
             {
                 float dist = Vector3.Distance(playerCar.Status.Position, behind);
 
+                // take the vector3 and clamp it on the sides to make it behind the ai
+                Vector3 clampedBehind = new Vector3(behind.X, behind.Y, behind.Z);
+                clampedBehind.X = Math.Clamp(clampedBehind.X, -2.0f, 2.0f);
+
                 if (dist < 15.0f)
                 {
                     // flash the ai
                     //Log.Information("AI DETECTS PLAYER BEHIND {SessionId}", EntryCar.SessionId);
+
+
 
                     // check if the player is flashing his lights on and off more then 2 times
 
