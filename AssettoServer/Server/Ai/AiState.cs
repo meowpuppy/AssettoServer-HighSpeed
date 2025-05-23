@@ -785,9 +785,8 @@ public class AiState
             {
                 float dist = Vector3.Distance(playerCar.Status.Position, behind);
 
-                // take the vector3 and clamp it on the sides to make it behind the ai
-                Vector3 clampedBehind = new Vector3(behind.X, behind.Y, behind.Z);
-                clampedBehind.X = Math.Clamp(clampedBehind.X, -2.0f, 2.0f);
+                Vector3 flashbox = new Vector3(behind.X, behind.Y, behind.Z);
+                flashbox.X = Math.Clamp(flashbox.X, -2.0f, 2.0f);
 
                 if (dist < 15.0f)
                 {
