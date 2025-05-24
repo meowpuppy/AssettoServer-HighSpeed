@@ -31,7 +31,18 @@ public class AiState
     }
 
     private int _currentSplinePointId;
-    
+
+    private class FlashInfo
+    {
+        public bool LastHighBeamsOn;
+        public int FlashCount;
+        public long FirstFlashTime;
+    }
+
+    private readonly Dictionary<byte, FlashInfo> _playerFlashStates = new();
+    private const int FlashWindowMs = 5000; // 5 seconds
+    private const int RequiredFlashes = 3;  // Number of flashes to trigger
+
     public long SpawnProtectionEnds { get; set; }
     public float SafetyDistanceSquared { get; set; } = 20 * 20;
     public float Acceleration { get; set; }
@@ -777,28 +788,63 @@ public class AiState
         _laneChangeCooldownMs = Random.Shared.Next(MinLaneChangeCooldownMs, MaxLaneChangeCooldownMs + 1);
     }
 
-    private void HandlePlayerFlash(Vector3 behind)
+    private void HandlePlayerFlash()
     {
         foreach (var playerCar in _entryCarManager.EntryCars)
         {
             if (playerCar.Client?.HasSentFirstUpdate == true)
             {
-                float dist = Vector3.Distance(playerCar.Status.Position, behind);
-
-                Vector3 flashbox = new Vector3(behind.X, behind.Y, behind.Z);
-                flashbox.X = Math.Clamp(flashbox.X, -2.0f, 2.0f);
-
-                if (dist < 15.0f)
+                // check whether the player is within 15 meters behind the ai and limit the distance left to right be 5 meters
+                float distance = Vector3.Distance(playerCar.Status.Position, Status.Position);
+                if (distance < 18f)
                 {
-                    // flash the ai
-                    //Log.Information("AI DETECTS PLAYER BEHIND {SessionId}", EntryCar.SessionId);
+                    float angle = GetAngleToCar(playerCar.Status);
+                    if (angle > 350 || angle < 10)
+                    {
+                        // Use a unique identifier for each player, e.g., SessionId
+                        byte sessionId = playerCar.SessionId; // Replace with actual session id property
 
+                        if (!_playerFlashStates.TryGetValue(sessionId, out var flashInfo))
+                        {
+                            flashInfo = new FlashInfo();
+                            _playerFlashStates[sessionId] = flashInfo;
+                        }
 
+                        bool highBeamsOn = !playerCar.Status.StatusFlag.HasFlag(CarStatusFlags.HighBeamsOff);
+                        long now = _sessionManager.ServerTimeMilliseconds;
 
-                    // check if the player is flashing his lights on and off more then 2 times
+                        // Reset if window expired
+                        if (flashInfo.FlashCount > 0 && now - flashInfo.FirstFlashTime > FlashWindowMs)
+                        {
+                            flashInfo.FlashCount = 0;
+                            flashInfo.FirstFlashTime = 0;
+                        }
 
+                        // Detect rising edge (off -> on)
+                        if (highBeamsOn && !flashInfo.LastHighBeamsOn)
+                        {
+                            if (flashInfo.FlashCount == 0)
+                            {
+                                flashInfo.FirstFlashTime = now;
+                            }
+                            flashInfo.FlashCount++;
 
-                    break;
+                            // If flashed enough times within window, trigger AI reaction
+                            if (flashInfo.FlashCount >= RequiredFlashes && now - flashInfo.FirstFlashTime <= FlashWindowMs)
+                            {
+                                Log.Information("AI {SessionId} detected player {PlayerSessionId} flashing high beams", EntryCar.SessionId, sessionId);
+
+                                bool direction = Random.Shared.Next(2) == 0;
+                                TryLaneChange(direction);
+
+                                // Reset after reaction
+                                flashInfo.FlashCount = 0;
+                                flashInfo.FirstFlashTime = 0;
+                            }
+                        }
+
+                        flashInfo.LastHighBeamsOn = highBeamsOn;
+                    }
                 }
             }
         }
@@ -845,10 +891,8 @@ public class AiState
         Vector3 forward = Vector3.Normalize(ops.Points[nextPoint].Position - ops.Points[CurrentSplinePointId].Position);
         Vector3 right = Vector3.Normalize(Vector3.Cross(Vector3.UnitY, forward));
         Vector3 left = Vector3.Normalize(Vector3.Cross(forward, Vector3.UnitY));
-        
-        Vector3 behind = smoothPos.Position - forward * 2.0f;
 
-        HandlePlayerFlash(behind);
+        HandlePlayerFlash();
 
         if (!_isChangingLane && _sessionManager.ServerTimeMilliseconds - _lastLaneChangeTime > _laneChangeCooldownMs)
         {

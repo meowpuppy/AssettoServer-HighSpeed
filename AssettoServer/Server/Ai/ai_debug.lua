@@ -1,6 +1,8 @@
 ﻿local carsBySessionId = {}
 local debugInfoBySessionId = {}
 
+local debugInfoEnabled = false
+
 for i = 0, sim.carsCount - 1 do
     local c = ac.getCar(i)
     carsBySessionId[c.sessionID] = c
@@ -33,6 +35,9 @@ local debugEvent = ac.OnlineEvent({
 end)
 
 function script.draw3D()
+    if not debugInfoEnabled then
+        return
+    end
     for sessionID, debugInfo in pairs(debugInfoBySessionId) do
         local car = carsBySessionId[sessionID]
         if car.position:closerToThan(ac.getCameraPosition(), 200) then
@@ -140,10 +145,15 @@ function script.draw3D()
     end
 end
 
--- debugEvent({
---     SessionIds = {9,8,7},
---     CurrentSpeeds = {1, 2, 3},
---     TargetSpeeds = {50, 60, 70},
---     MaxSpeeds = {13,14,15},
---     ClosestAiObstacles = {100, 200, 300},
--- }, false)
+local UIToggle = debugInfoEnabled
+
+ui.registerOnlineExtra(ui.Icons.Settings, "AI Debug",
+    function() return true end,
+    function()
+        if ui.checkbox('Enable AI Debug', UIToggle) then
+            UIToggle = not UIToggle
+            debugInfoEnabled = UIToggle
+        end
+    end,
+    function() end,
+    ui.OnlineExtraFlags.Tool)
