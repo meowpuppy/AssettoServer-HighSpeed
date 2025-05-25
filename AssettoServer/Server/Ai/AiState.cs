@@ -148,10 +148,19 @@ public class AiState
         _lastTick = _sessionManager.ServerTimeMilliseconds;
     }
 
+    public void SetDeviationSettings()
+    {
+        _laneDeviationPhase = (float)(Random.Shared.NextDouble() * MathF.PI * 2);
+        _laneDeviationSpeed = (0.2f + (float)Random.Shared.NextDouble() * 0.3f) * 0.15f;
+        _laneDeviationAmplitude = 0.15f + (float)Random.Shared.NextDouble() * 0.15f;
+    } 
+
     public void Despawn()
     {
         Initialized = false;
+        SetDeviationSettings();
         _spline.SlowestAiStates.Leave(CurrentSplinePointId, this);
+
     }
 
     private void SetRandomSpeed()
@@ -217,9 +226,9 @@ public class AiState
         _endIndicatorDistance = 0;
         _lastTick = _sessionManager.ServerTimeMilliseconds;
         _minObstacleDistance = Random.Shared.Next(8, 13);
-        _laneDeviationPhase = (float)(Random.Shared.NextDouble() * MathF.PI * 2);
-        _laneDeviationSpeed = (0.2f + (float)Random.Shared.NextDouble() * 0.3f) * 0.15f;
-        _laneDeviationAmplitude = 0.15f + (float)Random.Shared.NextDouble() * 0.15f;
+
+        SetDeviationSettings();
+
         SpawnCounter++;
         Initialized = true;
         Update();
@@ -725,7 +734,8 @@ public class AiState
 
         if (_scareFade > 0.001f)
         {
-            deviatedPosition += right * _lastMoveDir * _scareFade * 6f;
+            float scareOffset = Math.Clamp(_scareFade * 6f, 0, 2f);
+            deviatedPosition += right * _lastMoveDir * scareOffset;
         }
 
         return deviatedPosition;
@@ -774,6 +784,14 @@ public class AiState
             _laneChangeStartIndex = currentLane;
             _laneChangeTargetIndex = targetLane;
             _laneChangeProgress = 0f;
+
+            if (direction)
+            {
+                _indicator = CarStatusFlags.IndicateRight;
+            } else
+            {
+                _indicator = CarStatusFlags.IndicateLeft;
+            }
 
             //Log.Debug("AI {SessionId} started lane change to {Lane}", EntryCar.SessionId, targetLane);
         } catch (IndexOutOfRangeException e)
@@ -889,8 +907,8 @@ public class AiState
         float deviation = MathF.Sin(_laneDeviationPhase + currentTime * 0.001f * _laneDeviationSpeed * MathF.Tau) * _laneDeviationAmplitude;
 
         Vector3 forward = Vector3.Normalize(ops.Points[nextPoint].Position - ops.Points[CurrentSplinePointId].Position);
+        forward = Vector3.Normalize(forward); // ensure normalization
         Vector3 right = Vector3.Normalize(Vector3.Cross(Vector3.UnitY, forward));
-        Vector3 left = Vector3.Normalize(Vector3.Cross(forward, Vector3.UnitY));
 
         HandlePlayerFlash();
 
@@ -908,7 +926,9 @@ public class AiState
         }
 
         // Apply deviation to the position
-        Vector3 deviatedPosition = smoothPos.Position + right * deviation;
+        Vector3 deviatedPosition = smoothPos.Position;
+        if (!_isChangingLane)
+            deviatedPosition += right * deviation;
 
         // Handle lane change interpolation
         if (_isChangingLane)
@@ -932,7 +952,7 @@ public class AiState
 
                 // Interpolate laterally between lanes
                 deviatedPosition = Vector3.Lerp(startLanePos, targetLanePos, _laneChangeProgress)
-                    + forward * (_currentVecProgress / _currentVecLength) * _currentVecLength;
+                    + smoothPos.Tangent * (_currentVecProgress / _currentVecLength) * _currentVecLength;
 
                 if (_laneChangeProgress >= 1.0f)
                 {
@@ -940,6 +960,8 @@ public class AiState
                     _isChangingLane = false;
                     _currentLaneIndex = _laneChangeTargetIndex;
                     CurrentSplinePointId = lanes[_currentLaneIndex];
+                    _indicator = 0;
+                    _laneDeviationPhase = Random.Shared.NextSingle() * MathF.Tau;
                     //Log.Debug("AI {SessionId} completed lane change to {Lane}", EntryCar.SessionId, _currentLaneIndex);
                 }
             }
