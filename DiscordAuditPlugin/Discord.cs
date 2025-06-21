@@ -105,22 +105,49 @@ public class Discord
         string username;
         string content;
 
-        if (_configuration.ChatMessageIncludeServerName)
-        {
-            username = _serverNameSanitized;
-            content = $"**{sender.Name}:** {DiscordUtils.Sanitize(args.Message)}";
-        }
-        else
-        {
-            username = DiscordUtils.SanitizeUsername(sender.Name) ?? throw new InvalidOperationException("ACTcpClient has no name set");
-            content = DiscordUtils.Sanitize(args.Message);
-        }
+        username = DiscordUtils.SanitizeUsername(sender.Name);
+
+        content = DiscordUtils.Sanitize(args.Message);
+
+        //if (_configuration.ChatMessageIncludeServerName)
+        //{
+        //    username = _serverNameSanitized;
+        //    content = $"**{sender.Name}:** {DiscordUtils.Sanitize(args.Message)}";
+        //}
+        //else
+        //{
+        //    username = DiscordUtils.SanitizeUsername(sender.Name) ?? throw new InvalidOperationException("ACTcpClient has no name set");
+        //    content = DiscordUtils.Sanitize(args.Message);
+        //}
+
+        //DiscordMessage msg = new DiscordMessage
+        //{
+        //    AvatarUrl = _configuration.PictureUrl,
+        //    Username = username,
+        //    Content = content,
+        //    AllowedMentions = new AllowedMentions()
+        //};
+
+        string userSteamUrl = "https://steamcommunity.com/profiles/" + sender.Guid;
 
         DiscordMessage msg = new DiscordMessage
         {
+            Username = _serverNameSanitized,
             AvatarUrl = _configuration.PictureUrl,
-            Username = username,
-            Content = content,
+            Embeds = new List<DiscordEmbed>
+            {
+                new()
+                {
+                    Title = "AC Chat Message",
+                    Color = Color.RoyalBlue,
+                    Fields = new List<EmbedField>
+                    {
+                        new() { Name = "Username", Value = username, InLine = true },
+                        new() { Name = "Steam-GUID", Value = sender.Guid + " ([link](" + userSteamUrl + "))", InLine = true },
+                        new() { Name = "Message", Value = content }
+                    }
+                }
+            },
             AllowedMentions = new AllowedMentions()
         };
 
