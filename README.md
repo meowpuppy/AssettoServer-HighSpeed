@@ -1,7 +1,7 @@
 # AssettoServer-HighSpeed
 
 [![License](https://img.shields.io/github/license/HighSpeedgg/AssettoServer-HighSpeed)](LICENSE)
-[![Discord](https://img.shields.io/discord/960380637628498002?label=HighSpeed%20Discord)](https://highspeed.gg/discord)
+[![Discord](https://img.shields.io/discord/960380637628498002?label=HighSpeed%20Discord)](https://discord.gg/highspeed)
 
 ## Current Version
 
