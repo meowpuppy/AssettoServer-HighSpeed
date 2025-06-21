@@ -1,54 +1,32 @@
-# AssettoServer [![Build status](https://img.shields.io/github/actions/workflow/status/compujuckel/AssettoServer/dotnet.yml?logo=github&branch=master)](https://github.com/compujuckel/AssettoServer/actions/workflows/dotnet.yml) [![Discord](https://img.shields.io/discord/890676433746268231?logo=discord&label=Discord&color=7289da)](https://discord.gg/uXEXRcSkyz) [![Docker Hub](https://img.shields.io/docker/v/compujuckel/assettoserver?logo=docker&label=Docker)](https://hub.docker.com/r/compujuckel/assettoserver)
+# AssettoServer-HighSpeed
 
-## THIS IS A MODIFIED VERSION WITH SOME CHANGES BASED ON THE NEEDS OF https://highspeed.gg <br> <br> all credit for the base code goes to compujuckel's [Assetto Server](https://github.com/compujuckel/AssettoServer).
+[![License](https://img.shields.io/github/license/DevGamer9991/AssettoServer-HighSpeed)](LICENSE)
+[![Discord](https://img.shields.io/discord/960380637628498002?label=HighSpeed%20Discord)](https://highspeed.gg/discord)
 
-## About
-AssettoServer is a custom game server for Assetto Corsa developed with freeroam in mind. It greatly improves upon the default game server by fixing various security issues and providing new features like AI traffic and dynamic weather.
+## Overview
 
-Race/Quali sessions and lap times are not supported yet. Only use this if you want to run a practice-only freeroam server.
+**AssettoServer-HighSpeed** is a custom fork of [AssettoServer](https://github.com/compujuckel/AssettoServer) built specifically for the [HighSpeed.gg](https://highspeed.gg) freeroam and "cut up" server. This project takes the original AssettoServer and transforms it into the ultimate playground for cutting up in traffic—enabling players to weave, blast, and cruise through realistic, dynamic traffic in Assetto Corsa.
 
-This is a fork of https://github.com/compujuckel/AssettoServer.
+## Key Features
 
-## Documentation
-For more information on configuration, admin commands, etc. also check out our [website](https://assettoserver.org/).
+- 🚗 **Cut Up Traffic Handling**: Advanced, custom traffic logic for weaving and cutting up in dense traffic, designed for the full "cut up" freeroam experience.
+- 🌎 **Freeroam Oriented**: Persistent, open-world environments where you can explore, cruise, and challenge yourself in traffic, not just race.
+- 🛠️ **Custom Server Logic**: Purpose-built features and backend improvements focused on smooth, stable, and responsive multiplayer sessions.
+- 🔧 **Constantly Evolving**: Actively maintained and updated for the HighSpeed.gg community, with new traffic behaviors, server tweaks, and gameplay enhancements.
 
-## Getting help
-If you have trouble setting up a server feel free to visit the #server-troubleshooting channel on our [Discord](https://discord.gg/uXEXRcSkyz).
-Alternatively you can ask questions here: https://github.com/compujuckel/AssettoServer/discussions/categories/help
+## About HighSpeed.gg
 
-**Please don't use the Issue tracker for installation help or configuration questions. Also make sure to read the documentation first before asking questions that are already answered there!**
+[HighSpeed.gg](https://highspeed.gg) is a community-driven Assetto Corsa server that specializes in high-energy freeroam and cut up sessions. The server uses this special build to deliver the most authentic and enjoyable cut up traffic experience available in Assetto Corsa.
+
+## What does "Cut Up" mean?
+
+"Cut up" refers to the driving style of weaving and maneuvering through traffic at speed, threading the needle between AI and real drivers, much like viral street runs seen online. This server is purpose-built for that style—expect challenging, dynamic traffic and wide-open roads.
+
+## Credits
+
+- Base server by [compujuckel/AssettoServer](https://github.com/compujuckel/AssettoServer)
+- Custom modifications and ongoing development by the [HighSpeed.gg](https://highspeed.gg) team
 
 ## License
-AssettoServer is licensed under the GNU Affero General Public License v3.0, see [LICENSE](https://github.com/compujuckel/AssettoServer/blob/master/LICENSE) for more info.  
-Additionally, you must preserve the legal notices and author attributions present in the server.
 
-```
-Copyright (C)  2022 Niewiarowski, compujuckel
-
-This program is free software: you can redistribute it and/or modify
-it under the terms of the GNU Affero General Public License as published
-by the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-This program is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-GNU Affero General Public License for more details.
-
-You should have received a copy of the GNU Affero General Public License
-along with this program.  If not, see <https://www.gnu.org/licenses/>.
-
-
-Additional permission under GNU AGPL version 3 section 7
-
-If you modify this Program, or any covered work, by linking or combining it 
-with the Steamworks SDK by Valve Corporation, containing parts covered by the
-terms of the Steamworks SDK License, the licensors of this Program grant you
-additional permission to convey the resulting work.
-
-Additional permission under GNU AGPL version 3 section 7
-
-If you modify this Program, or any covered work, by linking or combining it 
-with plugins published on https://www.patreon.com/assettoserver, the licensors
-of this Program grant you additional permission to convey the resulting work.
-```
+This project inherits the license of the original AssettoServer. See [LICENSE](LICENSE) for details.
