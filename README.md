@@ -3,6 +3,13 @@
 [![License](https://img.shields.io/github/license/HighSpeedgg/AssettoServer-HighSpeed)](LICENSE)
 [![Discord](https://img.shields.io/discord/960380637628498002?label=HighSpeed%20Discord)](https://highspeed.gg/discord)
 
+## Current Version
+
+**Version: 0.0.54**
+
+> ⚠️ **Note:** This is **not** the newest version of AssettoServer or its forks. This repository is currently on version 0.0.54, which may lack the latest features, fixes, and improvements found in newer releases.  
+> For the absolute latest developments, **check [compujuckel/AssettoServer](https://github.com/compujuckel/AssettoServer)** or other related forks.
+
 ## Overview
 
 **AssettoServer-HighSpeed** is a custom fork of [AssettoServer](https://github.com/compujuckel/AssettoServer) built specifically for the [HighSpeed.gg](https://highspeed.gg) freeroam and "cut up" server. This project takes the original AssettoServer and transforms it into the ultimate playground for cutting up in traffic—enabling players to weave, blast, and cruise through realistic, dynamic traffic in Assetto Corsa.
