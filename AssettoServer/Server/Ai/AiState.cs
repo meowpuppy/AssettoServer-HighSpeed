@@ -552,6 +552,7 @@ public class AiState
             targetSpeed = 0;
             hasObstacle = true;
         }
+
         else if (playerObstacle.distance < splineLookahead.ClosestAiStateDistance && playerObstacle.entryCar != null)
         {
             float playerSpeed = playerObstacle.entryCar.Status.Velocity.Length();
@@ -745,15 +746,15 @@ public class AiState
     {
         try
         {
+            if (IsCarNextToMe())
+                return;
+
             var currentLanes = _spline.GetLanes(CurrentSplinePointId);
 
             var currentLane = _spline.GetLaneIndex(CurrentSplinePointId);
 
             if (currentLanes.Length <= 1 || _isChangingLane)
                 return;
-
-            //Log.Information("AI {id} Is in Current Lane {Lane}", this.EntryCar.SessionId, currentLane);
-
 
             var targetLane = direction ? currentLane + 1 : currentLane - 1;
 
@@ -763,14 +764,10 @@ public class AiState
 
             var nextLanes = _spline.GetLanes(nextPoint);
             if (_spline.GetLaneIndex(CurrentSplinePointId) >= nextLanes.Length || targetLane >= nextLanes.Length)
-                return; // Prevent index out of range
+                return; 
 
-            // Calculate progress
             float t = _currentVecProgress / _currentVecLength;
 
-            //Log.Information("Current Lanes Array: {CurrentLanes}", string.Join(", ", currentLanes.ToArray()));
-
-            // Compute positions using actual spline point IDs
             int currentLaneId = currentLanes[currentLane];
             int targetLaneId = currentLanes[targetLane];
             int nextCurrentLaneId = nextLanes[currentLane];
@@ -779,7 +776,6 @@ public class AiState
             Vector3 startPos = Vector3.Lerp(_spline.Points[currentLaneId].Position, _spline.Points[nextCurrentLaneId].Position, t);
             Vector3 targetPos = Vector3.Lerp(_spline.Points[targetLaneId].Position, _spline.Points[nextTargetLaneId].Position, t);
 
-            // Start lane change
             _isChangingLane = true;
             _laneChangeStartIndex = currentLane;
             _laneChangeTargetIndex = targetLane;
@@ -793,7 +789,6 @@ public class AiState
                 _indicator = CarStatusFlags.IndicateLeft;
             }
 
-            //Log.Debug("AI {SessionId} started lane change to {Lane}", EntryCar.SessionId, targetLane);
         } catch (IndexOutOfRangeException e)
         {
             return;
@@ -831,14 +826,12 @@ public class AiState
                         bool highBeamsOn = !playerCar.Status.StatusFlag.HasFlag(CarStatusFlags.HighBeamsOff);
                         long now = _sessionManager.ServerTimeMilliseconds;
 
-                        // Reset if window expired
                         if (flashInfo.FlashCount > 0 && now - flashInfo.FirstFlashTime > FlashWindowMs)
                         {
                             flashInfo.FlashCount = 0;
                             flashInfo.FirstFlashTime = 0;
                         }
 
-                        // Detect rising edge (off -> on)
                         if (highBeamsOn && !flashInfo.LastHighBeamsOn)
                         {
                             if (flashInfo.FlashCount == 0)
@@ -847,10 +840,10 @@ public class AiState
                             }
                             flashInfo.FlashCount++;
 
-                            // If flashed enough times within window, trigger AI reaction
+
                             if (flashInfo.FlashCount >= RequiredFlashes && now - flashInfo.FirstFlashTime <= FlashWindowMs)
                             {
-                                Log.Information("AI {SessionId} detected player {PlayerSessionId} flashing high beams", EntryCar.SessionId, sessionId);
+                                //Log.Information("AI {SessionId} detected player {PlayerSessionId} flashing high beams", EntryCar.SessionId, sessionId);
 
                                 bool direction = Random.Shared.Next(2) == 0;
                                 TryLaneChange(direction);
@@ -866,6 +859,25 @@ public class AiState
                 }
             }
         }
+    }
+
+    public bool IsCarNextToMe()
+    {
+        var lanes = _spline.GetLanes(CurrentSplinePointId);
+        if (lanes.Length <= 1)
+            return false;
+
+        int currentLaneIndex = _spline.GetLaneIndex(CurrentSplinePointId);
+        int leftLaneIndex = currentLaneIndex - 1;
+        int rightLaneIndex = currentLaneIndex + 1;
+
+        if (leftLaneIndex >= 0 && _spline.SlowestAiStates[lanes[leftLaneIndex]] != null)
+            return true;
+
+        if (rightLaneIndex < lanes.Length && _spline.SlowestAiStates[lanes[rightLaneIndex]] != null)
+            return true;
+
+        return false;
     }
 
     public void Update()
@@ -888,6 +900,11 @@ public class AiState
                 CurrentSpeed = TargetSpeed;
                 Acceleration = 0;
             }
+        }
+
+        if (IsCarNextToMe())
+        {
+            Log.Information("There is a AI Car Next to AI {SessionId}", EntryCar.SessionId);
         }
 
         float moveMeters = (dt / 1000.0f) * CurrentSpeed;
