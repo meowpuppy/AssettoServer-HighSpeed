@@ -1,6 +1,6 @@
 # AssettoServer-HighSpeed
 
-[![License](https://img.shields.io/github/license/DevGamer9991/AssettoServer-HighSpeed)](LICENSE)
+[![License](https://img.shields.io/github/license/HighSpeedgg/AssettoServer-HighSpeed)](LICENSE)
 [![Discord](https://img.shields.io/discord/960380637628498002?label=HighSpeed%20Discord)](https://highspeed.gg/discord)
 
 ## Overview
