@@ -71,9 +71,19 @@ public class AiState
     private long _laneChangeCooldownMs = 10000;
     private long _lastLaneChangeTime = 0;
 
-    // Add these fields to the class (replace the existing LaneChangeCooldownMs and _lastLaneChangeTime)
-    private static readonly int MinLaneChangeCooldownMs = 30_000;   // 30 seconds
-    private static readonly int MaxLaneChangeCooldownMs = 120_000;  // 2 minutes
+    private static readonly int MinLaneChangeCooldownMs = 30_000;
+    private static readonly int MaxLaneChangeCooldownMs = 120_000; 
+
+    private static readonly Dictionary<int, Dictionary<int, LaneSpeedInfo>> _laneSpeedsBySplinePoint = new();
+    private static readonly object _laneSpeedLock = new object();
+
+    private class LaneSpeedInfo
+    {
+        public float SpeedMultiplier { get; set; } = 1.0f;
+        public float TargetMultiplier { get; set; } = 1.0f;
+        public long LastUpdateTime { get; set; }
+        public float ChangeRate { get; set; } = 0.1f;
+    }
 
     private int _currentLaneIndex = 0;
 
@@ -163,6 +173,95 @@ public class AiState
 
     }
 
+    private float GetLaneSpeedMultiplier(int splinePointId, int laneIndex)
+    {
+        lock (_laneSpeedLock)
+        {
+            if (!_laneSpeedsBySplinePoint.TryGetValue(splinePointId, out var laneSpeeds))
+            {
+                laneSpeeds = new Dictionary<int, LaneSpeedInfo>();
+                _laneSpeedsBySplinePoint[splinePointId] = laneSpeeds;
+            }
+
+            if (!laneSpeeds.TryGetValue(laneIndex, out var speedInfo))
+            {
+                speedInfo = new LaneSpeedInfo
+                {
+                    SpeedMultiplier = GenerateInitialLaneSpeedMultiplier(laneIndex),
+                    LastUpdateTime = _sessionManager.ServerTimeMilliseconds
+                };
+                speedInfo.TargetMultiplier = speedInfo.SpeedMultiplier;
+                laneSpeeds[laneIndex] = speedInfo;
+            }
+
+            // Update the speed multiplier over time
+            UpdateLaneSpeedMultiplier(speedInfo);
+            
+            return speedInfo.SpeedMultiplier;
+        }
+    }
+
+    private float GenerateInitialLaneSpeedMultiplier(int laneIndex)
+    {
+        // Left lanes (lower index) tend to be faster, right lanes slower
+        // Add some randomization to make it more interesting
+        float baseMultiplier = 1.0f;
+        
+        if (laneIndex == 0) // Leftmost lane (passing lane)
+        {
+            baseMultiplier = 1.1f + (float)Random.Shared.NextDouble() * 0.2f; // 1.1 - 1.3x speed
+        }
+        else if (laneIndex == 1) // Middle-left lane
+        {
+            baseMultiplier = 1.0f + (float)Random.Shared.NextDouble() * 0.15f; // 1.0 - 1.15x speed
+        }
+        else // Right lanes (slower)
+        {
+            baseMultiplier = 0.85f + (float)Random.Shared.NextDouble() * 0.2f; // 0.85 - 1.05x speed
+        }
+        
+        return MathF.Max(0.7f, MathF.Min(1.4f, baseMultiplier)); // Clamp between reasonable bounds
+    }
+
+    private void UpdateLaneSpeedMultiplier(LaneSpeedInfo speedInfo)
+    {
+        long currentTime = _sessionManager.ServerTimeMilliseconds;
+        long timeDelta = currentTime - speedInfo.LastUpdateTime;
+        speedInfo.LastUpdateTime = currentTime;
+        
+        // CRITICAL FIX: Much slower speed multiplier changes to prevent random speed drops
+        // Check if we need a new target (every 2-5 minutes instead of 30-120 seconds)
+        if (Math.Abs(speedInfo.SpeedMultiplier - speedInfo.TargetMultiplier) < 0.01f)
+        {
+            if (Random.Shared.NextDouble() < 0.0005) // ~0.05% chance per update - much lower
+            {
+                // Generate new target multiplier with SMALLER variation
+                float variation = 0.05f + (float)Random.Shared.NextDouble() * 0.1f; // 0.05 to 0.15 variation (reduced)
+                float direction = Random.Shared.Next(2) == 0 ? -1f : 1f;
+                
+                speedInfo.TargetMultiplier = speedInfo.SpeedMultiplier + (direction * variation);
+                speedInfo.TargetMultiplier = MathF.Max(0.85f, MathF.Min(1.2f, speedInfo.TargetMultiplier)); // Tighter bounds
+                
+                // Set MUCH slower change rate
+                speedInfo.ChangeRate = 0.01f + (float)Random.Shared.NextDouble() * 0.02f; // 0.01 to 0.03 per second
+            }
+        }
+        
+        // Gradually move towards target multiplier VERY slowly
+        if (Math.Abs(speedInfo.SpeedMultiplier - speedInfo.TargetMultiplier) > 0.005f)
+        {
+            float change = speedInfo.ChangeRate * (timeDelta / 1000.0f);
+            if (speedInfo.SpeedMultiplier < speedInfo.TargetMultiplier)
+            {
+                speedInfo.SpeedMultiplier = MathF.Min(speedInfo.TargetMultiplier, speedInfo.SpeedMultiplier + change);
+            }
+            else
+            {
+                speedInfo.SpeedMultiplier = MathF.Max(speedInfo.TargetMultiplier, speedInfo.SpeedMultiplier - change);
+            }
+        }
+    }
+
     private void SetRandomSpeed()
     {
         float variation = _configuration.Extra.AiParams.MaxSpeedMs * _configuration.Extra.AiParams.MaxSpeedVariationPercent;
@@ -172,7 +271,11 @@ public class AiState
         {
             fastLaneOffset = _configuration.Extra.AiParams.RightLaneOffsetMs;
         }
-        InitialMaxSpeed = _configuration.Extra.AiParams.MaxSpeedMs + fastLaneOffset - (variation / 2) + (float)Random.Shared.NextDouble() * variation;
+
+        // Get lane-specific speed multiplier
+        float laneSpeedMultiplier = GetLaneSpeedMultiplier(CurrentSplinePointId, _currentLaneIndex);
+
+        InitialMaxSpeed = (_configuration.Extra.AiParams.MaxSpeedMs + fastLaneOffset - (variation / 2) + (float)Random.Shared.NextDouble() * variation) * laneSpeedMultiplier;
         CurrentSpeed = InitialMaxSpeed;
         TargetSpeed = InitialMaxSpeed;
         MaxSpeed = InitialMaxSpeed;
@@ -277,6 +380,7 @@ public class AiState
             }
 
             CurrentSplinePointId = nextPointId;
+            _currentLaneIndex = _spline.GetLaneIndex(CurrentSplinePointId);
             _currentVecLength = (points[nextNextPointId].Position - points[CurrentSplinePointId].Position).Length();
             recalculateTangents = true;
 
@@ -521,11 +625,52 @@ public class AiState
 
         return isObstacle;
     }
+    
+    private (AiState? car, float distance) FindCarInSameLaneAhead()
+    {
+        // Check for cars in the same lane ahead
+        int checkDistance = 15; // Check further ahead
+        float closestDistance = float.MaxValue;
+        AiState? closestCar = null;
+        
+        for (int offset = 1; offset <= checkDistance; offset++)
+        {
+            int checkPointId = CurrentSplinePointId;
+            
+            // Navigate forward
+            for (int i = 0; i < offset; i++)
+            {
+                checkPointId = _junctionEvaluator.Next(checkPointId);
+                if (checkPointId < 0) break;
+            }
+            
+            if (checkPointId < 0) continue;
+            
+            var lanes = _spline.GetLanes(checkPointId);
+            int checkLaneIndex = _spline.GetLaneIndex(checkPointId);
+            
+            if (checkLaneIndex >= 0 && checkLaneIndex < lanes.Length)
+            {
+                var carAhead = _spline.SlowestAiStates[lanes[checkLaneIndex]];
+                if (carAhead != null && carAhead != this)
+                {
+                    float distance = Vector3.Distance(Status.Position, carAhead.Status.Position);
+                    if (distance < closestDistance)
+                    {
+                        closestDistance = distance;
+                        closestCar = carAhead;
+                    }
+                }
+            }
+        }
+        
+        return (closestCar, closestDistance);
+    }
 
     public void DetectObstacles()
     {
         if (!Initialized) return;
-            
+
         if (_sessionManager.ServerTimeMilliseconds < _ignoreObstaclesUntil)
         {
             SetTargetSpeed(MaxSpeed);
@@ -537,9 +682,9 @@ public class AiState
             SetTargetSpeed(0);
             return;
         }
-            
-        float targetSpeed = InitialMaxSpeed;
-        float maxSpeed = InitialMaxSpeed;
+
+        float targetSpeed = MaxSpeed; // Use MaxSpeed instead of InitialMaxSpeed
+        float maxSpeed = MaxSpeed;
         bool hasObstacle = false;
 
         var splineLookahead = SplineLookahead();
@@ -547,41 +692,65 @@ public class AiState
 
         ClosestAiObstacleDistance = splineLookahead.ClosestAiState != null ? splineLookahead.ClosestAiStateDistance : -1;
 
-        if (playerObstacle.distance < _minObstacleDistance || splineLookahead.ClosestAiStateDistance < _minObstacleDistance)
+        // CRITICAL FIX: Check for cars in same lane first with proper speed matching
+        var carInSameLane = FindCarInSameLaneAhead();
+        if (carInSameLane.car != null && carInSameLane.distance < 30f) // 30m detection range
         {
-            targetSpeed = 0;
-            hasObstacle = true;
-        }
+            float carAheadSpeed = Math.Min(carInSameLane.car.CurrentSpeed, carInSameLane.car.TargetSpeed);
 
-        else if (playerObstacle.distance < splineLookahead.ClosestAiStateDistance && playerObstacle.entryCar != null)
-        {
-            float playerSpeed = playerObstacle.entryCar.Status.Velocity.Length();
-
-            if (playerSpeed < 0.1f)
+            // If car ahead is significantly slower, match its speed
+            if (carAheadSpeed < CurrentSpeed - 2.0f) // 2 m/s buffer
             {
-                playerSpeed = 0;
-            }
+                float brakingDistance = PhysicsUtils.CalculateBrakingDistance(CurrentSpeed - carAheadSpeed, EntryCar.AiDeceleration) * 1.5f;
 
-            if ((playerSpeed < CurrentSpeed || playerSpeed == 0)
-                && playerObstacle.distance < PhysicsUtils.CalculateBrakingDistance(CurrentSpeed - playerSpeed, EntryCar.AiDeceleration) * 2 + 20)
-            {
-                targetSpeed = Math.Max(WalkingSpeed, playerSpeed);
-                hasObstacle = true;
+                if (carInSameLane.distance < brakingDistance)
+                {
+                    // Gradually match the speed of the car ahead, don't just stop
+                    targetSpeed = Math.Max(carAheadSpeed * 0.95f, WalkingSpeed); // Slightly slower than car ahead
+                    hasObstacle = true;
+                }
             }
         }
-        else if (splineLookahead.ClosestAiState != null)
+
+        // Only check other obstacles if we don't have a same-lane car to follow
+        if (!hasObstacle)
         {
-            float closestTargetSpeed = Math.Min(splineLookahead.ClosestAiState.CurrentSpeed, splineLookahead.ClosestAiState.TargetSpeed);
-            if ((closestTargetSpeed < CurrentSpeed || splineLookahead.ClosestAiState.CurrentSpeed == 0)
-                && splineLookahead.ClosestAiStateDistance < PhysicsUtils.CalculateBrakingDistance(CurrentSpeed - closestTargetSpeed, EntryCar.AiDeceleration) * 2 + 20)
+            if (playerObstacle.distance < _minObstacleDistance || splineLookahead.ClosestAiStateDistance < _minObstacleDistance)
             {
-                targetSpeed = Math.Max(WalkingSpeed, closestTargetSpeed);
+                targetSpeed = 0;
                 hasObstacle = true;
+            }
+            else if (playerObstacle.distance < splineLookahead.ClosestAiStateDistance && playerObstacle.entryCar != null)
+            {
+                float playerSpeed = playerObstacle.entryCar.Status.Velocity.Length();
+
+                if (playerSpeed < 0.1f)
+                {
+                    playerSpeed = 0;
+                }
+
+                if ((playerSpeed < CurrentSpeed || playerSpeed == 0)
+                    && playerObstacle.distance < PhysicsUtils.CalculateBrakingDistance(CurrentSpeed - playerSpeed, EntryCar.AiDeceleration) * 2 + 20)
+                {
+                    targetSpeed = Math.Max(WalkingSpeed, playerSpeed);
+                    hasObstacle = true;
+                }
+            }
+            else if (splineLookahead.ClosestAiState != null)
+            {
+                float closestTargetSpeed = Math.Min(splineLookahead.ClosestAiState.CurrentSpeed, splineLookahead.ClosestAiState.TargetSpeed);
+                if ((closestTargetSpeed < CurrentSpeed || splineLookahead.ClosestAiState.CurrentSpeed == 0)
+                    && splineLookahead.ClosestAiStateDistance < PhysicsUtils.CalculateBrakingDistance(CurrentSpeed - closestTargetSpeed, EntryCar.AiDeceleration) * 2 + 20)
+                {
+                    targetSpeed = Math.Max(WalkingSpeed, closestTargetSpeed);
+                    hasObstacle = true;
+                }
             }
         }
 
         targetSpeed = Math.Min(splineLookahead.MaxSpeed, targetSpeed);
 
+        // ... rest of the obstacle detection logic stays the same ...
         if (CurrentSpeed == 0 && !_stoppedForObstacle)
         {
             _stoppedForObstacle = true;
@@ -606,7 +775,7 @@ public class AiState
         {
             deceleration *= EntryCar.AiCorneringBrakeForceFactor;
         }
-        
+
         MaxSpeed = maxSpeed;
         SetTargetSpeed(targetSpeed, deceleration, EntryCar.AiAcceleration);
     }
@@ -861,6 +1030,25 @@ public class AiState
         }
     }
 
+    // public bool IsCarNextToMe()
+    // {
+    //     var lanes = _spline.GetLanes(CurrentSplinePointId);
+    //     if (lanes.Length <= 1)
+    //         return false;
+
+    //     int currentLaneIndex = _spline.GetLaneIndex(CurrentSplinePointId);
+    //     int leftLaneIndex = currentLaneIndex - 1;
+    //     int rightLaneIndex = currentLaneIndex + 1;
+
+    //     if (leftLaneIndex >= 0 && _spline.SlowestAiStates[lanes[leftLaneIndex]] != null)
+    //         return true;
+
+    //     if (rightLaneIndex < lanes.Length && _spline.SlowestAiStates[lanes[rightLaneIndex]] != null)
+    //         return true;
+
+    //     return false;
+    // }
+    
     public bool IsCarNextToMe()
     {
         var lanes = _spline.GetLanes(CurrentSplinePointId);
@@ -871,11 +1059,69 @@ public class AiState
         int leftLaneIndex = currentLaneIndex - 1;
         int rightLaneIndex = currentLaneIndex + 1;
 
-        if (leftLaneIndex >= 0 && _spline.SlowestAiStates[lanes[leftLaneIndex]] != null)
-            return true;
-
-        if (rightLaneIndex < lanes.Length && _spline.SlowestAiStates[lanes[rightLaneIndex]] != null)
-            return true;
+        // Check multiple points ahead and behind to account for speed differences
+        int checkDistance = 5; // Number of spline points to check in each direction
+        
+        for (int offset = -checkDistance; offset <= checkDistance; offset++)
+        {
+            int checkPointId = CurrentSplinePointId;
+            
+            // Navigate to the point we want to check
+            if (offset > 0)
+            {
+                // Check points ahead
+                for (int i = 0; i < offset; i++)
+                {
+                    checkPointId = _junctionEvaluator.Next(checkPointId);
+                    if (checkPointId < 0) break; // Reached end of spline
+                }
+            }
+            else if (offset < 0)
+            {
+                // Check points behind
+                for (int i = 0; i < -offset; i++)
+                {
+                    if (!_junctionEvaluator.TryPrevious(checkPointId, out checkPointId))
+                        break; // Reached beginning of spline
+                }
+            }
+            
+            if (checkPointId < 0) continue; // Invalid point, skip
+            
+            var checkLanes = _spline.GetLanes(checkPointId);
+            if (checkLanes.Length <= 1) continue;
+            
+            int checkCurrentLaneIndex = _spline.GetLaneIndex(checkPointId);
+            int checkLeftLaneIndex = checkCurrentLaneIndex - 1;
+            int checkRightLaneIndex = checkCurrentLaneIndex + 1;
+            
+            // Check left lane
+            if (leftLaneIndex >= 0 && checkLeftLaneIndex >= 0 && 
+                checkLeftLaneIndex < checkLanes.Length && 
+                _spline.SlowestAiStates[checkLanes[checkLeftLaneIndex]] != null)
+            {
+                // Additional check: if there's a car in the adjacent lane and it's moving at a different speed,
+                // increase the safety margin
+                var adjacentCar = _spline.SlowestAiStates[checkLanes[checkLeftLaneIndex]];
+                float speedDifference = MathF.Abs(CurrentSpeed - adjacentCar.CurrentSpeed);
+                
+                // If speed difference is significant, consider it unsafe
+                if (speedDifference > 5.0f || MathF.Abs(offset) <= 2) // Always unsafe if within 2 points
+                    return true;
+            }
+            
+            // Check right lane
+            if (rightLaneIndex < lanes.Length && checkRightLaneIndex >= 0 && 
+                checkRightLaneIndex < checkLanes.Length && 
+                _spline.SlowestAiStates[checkLanes[checkRightLaneIndex]] != null)
+            {
+                var adjacentCar = _spline.SlowestAiStates[checkLanes[checkRightLaneIndex]];
+                float speedDifference = MathF.Abs(CurrentSpeed - adjacentCar.CurrentSpeed);
+                
+                if (speedDifference > 5.0f || MathF.Abs(offset) <= 2)
+                    return true;
+            }
+        }
 
         return false;
     }
@@ -891,15 +1137,33 @@ public class AiState
         long dt = currentTime - _lastTick;
         _lastTick = currentTime;
 
+
+        float currentLaneMultiplier = GetLaneSpeedMultiplier(CurrentSplinePointId, _currentLaneIndex);
+        float baseMaxSpeed = InitialMaxSpeed;
+        
+        if (!_isChangingLane && (currentTime % 5000 < dt)) // Update every 5 seconds
+        {
+            MaxSpeed = baseMaxSpeed * currentLaneMultiplier;
+        }
+
+        if (Acceleration == 0 && Math.Abs(TargetSpeed - MaxSpeed) < 1.0f && !_stoppedForObstacle)
+        {
+            TargetSpeed = Math.Min(TargetSpeed, MaxSpeed);
+        }
+
         if (Acceleration != 0)
         {
-            CurrentSpeed += Acceleration * (dt / 1000.0f);
+            float speedChange = Acceleration * (dt / 1000.0f);
+            CurrentSpeed += speedChange;
 
-            if ((Acceleration < 0 && CurrentSpeed < TargetSpeed) || (Acceleration > 0 && CurrentSpeed > TargetSpeed))
+            if ((Acceleration < 0 && CurrentSpeed <= TargetSpeed) || (Acceleration > 0 && CurrentSpeed >= TargetSpeed))
             {
                 CurrentSpeed = TargetSpeed;
                 Acceleration = 0;
             }
+            
+            // Clamp to reasonable bounds
+            CurrentSpeed = Math.Max(0, CurrentSpeed);
         }
 
         if (IsCarNextToMe())
