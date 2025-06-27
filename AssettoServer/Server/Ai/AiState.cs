@@ -1,9 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Drawing;
-using System.Linq;
-using System.Numerics;
-using AssettoServer.Server.Ai.Splines;
+﻿using AssettoServer.Server.Ai.Splines;
 using AssettoServer.Server.Configuration;
 using AssettoServer.Server.Weather;
 using AssettoServer.Shared.Model;
@@ -11,6 +6,10 @@ using AssettoServer.Shared.Network.Packets.Outgoing;
 using AssettoServer.Utils;
 using JPBotelho;
 using Serilog;
+using System;
+using System.Collections.Generic;
+using System.Drawing;
+using System.Numerics;
 
 namespace AssettoServer.Server.Ai;
 
@@ -66,7 +65,7 @@ public class AiState
     private int _laneChangeStartIndex;
     private int _laneChangeTargetIndex;
     private float _laneChangeProgress = 0f;
-    private float _laneChangeDuration = Random.Shared.Next(2, 7); // seconds, adjust as needed
+    private float _laneChangeDuration = Random.Shared.Next(3, 5); // seconds, adjust as needed
 
     private long _laneChangeCooldownMs = 10000;
     private long _lastLaneChangeTime = 0;
@@ -290,6 +289,9 @@ public class AiState
     {
         _junctionEvaluator.Clear();
         CurrentSplinePointId = pointId;
+        
+        // CRITICAL FIX: Update lane index immediately after setting spline point
+        _currentLaneIndex = _spline.GetLaneIndex(CurrentSplinePointId);
 
         if (!_junctionEvaluator.TryNext(CurrentSplinePointId, out var nextPointId))
             throw new InvalidOperationException($"Cannot get next spline point for {CurrentSplinePointId}");
@@ -329,6 +331,10 @@ public class AiState
         _endIndicatorDistance = 0;
         _lastTick = _sessionManager.ServerTimeMilliseconds;
         _minObstacleDistance = Random.Shared.Next(8, 13);
+
+        // Reset lane change state to prevent conflicts
+        _isChangingLane = false;
+        _laneChangeProgress = 0f;
 
         SetDeviationSettings();
 
