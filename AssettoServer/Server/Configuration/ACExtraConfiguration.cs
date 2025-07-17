@@ -242,7 +242,19 @@ public partial class AiParams : ObservableObject
     public float RightLaneOffsetKph { get; set; } = 10;
     [YamlMember(Description = "Maximum speed variation")]
     public float MaxSpeedVariationPercent { get; set; } = 0.15f;
-    
+    [YamlMember(Description = "Minimum lane change speed in seconds")]
+    public float MinLaneChangeTime { get; set; } = 3.0f;
+    [YamlMember(Description = "Maximum lane change speed in seconds")]
+    public float MaxLaneChangeTime { get; set; } = 5.0f;
+    [YamlMember(Description = "Minimum lane change cooldown in seconds")]
+    public float MinLaneChangeCooldown { get; set; } = 30.0f;
+    [YamlMember(Description = "Maximum lane change cooldown in seconds")]
+    public float MaxLaneChangeCooldown { get; set; } = 120.0f;
+    [YamlMember(Description = "The required amount of flashes to trigger a lane change.")]
+    public int RequiredFlashes { get; set; } = 3;
+    [YamlMember(Description = "The amount of time in seconds you must flash your lights to trigger a lane change.")]
+    public int FlashWindow { get; set; } = 5;
+
     [ObservableProperty]
     [property: YamlMember(Description = "Default AI car deceleration for obstacle/collision detection (m/s^2)")]
     private float _defaultDeceleration = 8.5f;
@@ -250,7 +262,7 @@ public partial class AiParams : ObservableObject
     [ObservableProperty]
     [property: YamlMember(Description = "Default AI car acceleration for obstacle/collision detection (m/s^2)")]
     private float _defaultAcceleration = 2.5f;
-    
+
     [ObservableProperty]
     [property: YamlMember(Description = "Maximum AI car target count for AI slot overbooking. This is not an absolute maximum and might be slightly higher")]
     private int _maxAiTargetCount = 300;

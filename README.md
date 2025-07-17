@@ -21,6 +21,27 @@
 - 🛠️ **Custom Server Logic**: Purpose-built features and backend improvements focused on smooth, stable, and responsive multiplayer sessions.
 - 🔧 **Constantly Evolving**: Actively maintained and updated for the HighSpeed.gg community, with new traffic behaviors, server tweaks, and gameplay enhancements.
 
+
+# New Traffic Config Values
+
+In this custom fork, we have introduced new configuration values to enhance the traffic experience. These values allow for more precise control over how traffic behaves in the game, making it easier to create a dynamic and engaging environment for players.
+
+They are placed in the `extra_config.yml` file, which is loaded by the server at startup. You can modify these values to suit your server's needs.
+
+## New Traffic Config Values
+
+```yaml
+AiParams:
+    
+    ... # Existing AI parameters remain unchanged
+
+    # New traffic configuration values
+    MinLaneChangeTime: 4
+    MaxLaneChangeTime: 7
+    MinLaneChangeCooldown: 30
+    MaxLaneChangeCooldown: 120
+```
+
 ## About HighSpeed.gg
 
 [HighSpeed.gg](https://highspeed.gg) is a community-driven Assetto Corsa server that specializes in high-energy freeroam and cut up sessions. The server uses this special build to deliver the most authentic and enjoyable cut up traffic experience available in Assetto Corsa.

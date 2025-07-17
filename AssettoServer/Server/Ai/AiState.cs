@@ -18,6 +18,13 @@ public class AiState
     public CarStatus Status { get; } = new();
     public bool Initialized { get; private set; }
 
+    private readonly ACServerConfiguration _configuration;
+    private readonly SessionManager _sessionManager;
+    private readonly EntryCarManager _entryCarManager;
+    private readonly WeatherManager _weatherManager;
+    private readonly AiSpline _spline;
+    private readonly JunctionEvaluator _junctionEvaluator;
+
     public int CurrentSplinePointId
     {
         get => _currentSplinePointId;
@@ -39,8 +46,8 @@ public class AiState
     }
 
     private readonly Dictionary<byte, FlashInfo> _playerFlashStates = new();
-    private const int FlashWindowMs = 5000; // 5 seconds
-    private const int RequiredFlashes = 3;  // Number of flashes to trigger
+    private int FlashWindowMs; // 5 seconds
+    private int RequiredFlashes;  // Number of flashes to trigger
 
     public long SpawnProtectionEnds { get; set; }
     public float SafetyDistanceSquared { get; set; } = 20 * 20;
@@ -58,20 +65,20 @@ public class AiState
     private float _scareFade = 0f; // 0 = not scared, 1 = fully scared
     private float _scareTarget = 0f;
     private float _lastMoveDir = 0f;
-    private const float ScareFadeInSpeed = 5.0f;  // seconds to fade in
-    private const float ScareFadeOutSpeed = 10.0f; // seconds to fade out
+    private const float ScareFadeInSpeed = 5.0f;
+    private const float ScareFadeOutSpeed = 10.0f;
 
     private bool _isChangingLane = false;
     private int _laneChangeStartIndex;
     private int _laneChangeTargetIndex;
     private float _laneChangeProgress = 0f;
-    private float _laneChangeDuration = Random.Shared.Next(3, 5); // seconds, adjust as needed
+    private float _laneChangeDuration;
 
     private long _laneChangeCooldownMs = 10000;
     private long _lastLaneChangeTime = 0;
 
-    private static readonly int MinLaneChangeCooldownMs = 30_000;
-    private static readonly int MaxLaneChangeCooldownMs = 120_000; 
+    private float MinLaneChangeCooldown;
+    private float MaxLaneChangeCooldown;
 
     private static readonly Dictionary<int, Dictionary<int, LaneSpeedInfo>> _laneSpeedsBySplinePoint = new();
     private static readonly object _laneSpeedLock = new object();
@@ -110,13 +117,6 @@ public class AiState
     private float _laneDeviationSpeed;
     private float _laneDeviationAmplitude;
 
-    private readonly ACServerConfiguration _configuration;
-    private readonly SessionManager _sessionManager;
-    private readonly EntryCarManager _entryCarManager;
-    private readonly WeatherManager _weatherManager;
-    private readonly AiSpline _spline;
-    private readonly JunctionEvaluator _junctionEvaluator;
-
     private static readonly List<Color> CarColors =
     [
         Color.FromArgb(13, 17, 22),
@@ -148,6 +148,14 @@ public class AiState
         _entryCarManager = entryCarManager;
         _spline = spline;
         _junctionEvaluator = new JunctionEvaluator(spline);
+
+        MinLaneChangeCooldown = _configuration.Extra.AiParams.MinLaneChangeCooldown;
+        MaxLaneChangeCooldown = _configuration.Extra.AiParams.MaxLaneChangeCooldown;
+
+        _laneChangeDuration = Random.Shared.Next((int)_configuration.Extra.AiParams.MinLaneChangeTime, (int)_configuration.Extra.AiParams.MaxLaneChangeTime);
+
+        RequiredFlashes = _configuration.Extra.AiParams.RequiredFlashes;
+        FlashWindowMs = _configuration.Extra.AiParams.FlashWindow * 1000;
 
         // set the _currentlaneIndex to the current lane of the ai using the spline point id
         _currentLaneIndex = _spline.GetLaneIndex(CurrentSplinePointId);
@@ -973,7 +981,7 @@ public class AiState
 
     private void SetNextLaneChangeCooldown()
     {
-        _laneChangeCooldownMs = Random.Shared.Next(MinLaneChangeCooldownMs, MaxLaneChangeCooldownMs + 1);
+        _laneChangeCooldownMs = Random.Shared.Next((int)MinLaneChangeCooldown * 1000, ((int)MaxLaneChangeCooldown + 1) * 1000);
     }
 
     private void HandlePlayerFlash()
@@ -1132,22 +1140,25 @@ public class AiState
         return false;
     }
 
+    private static float SmootherStep(float t)
+    {
+        t = Math.Clamp(t, 0f, 1f);
+        return t * t * t * (t * (t * 6 - 15) + 10);
+    }
+
     public void Update()
     {
         if (!Initialized)
             return;
 
         var ops = _spline.Operations;
-
         long currentTime = _sessionManager.ServerTimeMilliseconds;
         long dt = currentTime - _lastTick;
         _lastTick = currentTime;
 
-
         float currentLaneMultiplier = GetLaneSpeedMultiplier(CurrentSplinePointId, _currentLaneIndex);
         float baseMaxSpeed = InitialMaxSpeed;
-        
-        if (!_isChangingLane && (currentTime % 5000 < dt)) // Update every 5 seconds
+        if (!_isChangingLane && (currentTime % 5000 < dt))
         {
             MaxSpeed = baseMaxSpeed * currentLaneMultiplier;
         }
@@ -1167,14 +1178,7 @@ public class AiState
                 CurrentSpeed = TargetSpeed;
                 Acceleration = 0;
             }
-            
-            // Clamp to reasonable bounds
             CurrentSpeed = Math.Max(0, CurrentSpeed);
-        }
-
-        if (IsCarNextToMe())
-        {
-            Log.Information("There is a AI Car Next to AI {SessionId}", EntryCar.SessionId);
         }
 
         float moveMeters = (dt / 1000.0f) * CurrentSpeed;
@@ -1194,17 +1198,15 @@ public class AiState
         float deviation = MathF.Sin(_laneDeviationPhase + currentTime * 0.001f * _laneDeviationSpeed * MathF.Tau) * _laneDeviationAmplitude;
 
         Vector3 forward = Vector3.Normalize(ops.Points[nextPoint].Position - ops.Points[CurrentSplinePointId].Position);
-        forward = Vector3.Normalize(forward); // ensure normalization
+        forward = Vector3.Normalize(forward);
         Vector3 right = Vector3.Normalize(Vector3.Cross(Vector3.UnitY, forward));
 
         HandlePlayerFlash();
 
         if (!_isChangingLane && _sessionManager.ServerTimeMilliseconds - _lastLaneChangeTime > _laneChangeCooldownMs)
         {
-            // Random chance to consider a lane change
             if (Random.Shared.NextDouble() < 0.01)
             {
-                // Randomly pick left or right
                 bool direction = Random.Shared.Next(2) == 0;
                 TryLaneChange(direction);
                 _lastLaneChangeTime = _sessionManager.ServerTimeMilliseconds;
@@ -1212,12 +1214,11 @@ public class AiState
             }
         }
 
-        // Apply deviation to the position
         Vector3 deviatedPosition = smoothPos.Position;
-        if (!_isChangingLane)
-            deviatedPosition += right * deviation;
+        float laneWidth = _configuration.Extra.AiParams.LaneWidthMeters;
+        float maxLateralOffset = laneWidth / 2 - 0.5f;
 
-        // Handle lane change interpolation
+        // --- Lane Change Interpolation ---
         if (_isChangingLane)
         {
             _laneChangeProgress += (dt / 1000.0f) / _laneChangeDuration;
@@ -1225,33 +1226,47 @@ public class AiState
 
             var lanes = _spline.GetLanes(CurrentSplinePointId);
 
-            // Bounds check
             if (_laneChangeStartIndex < 0 || _laneChangeStartIndex >= lanes.Length ||
                 _laneChangeTargetIndex < 0 || _laneChangeTargetIndex >= lanes.Length)
             {
-                // Abort lane change if indices are invalid
                 _isChangingLane = false;
             }
             else
             {
+                float smoothProgress = SmootherStep(_laneChangeProgress);
+
                 Vector3 startLanePos = _spline.Points[lanes[_laneChangeStartIndex]].Position;
                 Vector3 targetLanePos = _spline.Points[lanes[_laneChangeTargetIndex]].Position;
 
-                // Interpolate laterally between lanes
-                deviatedPosition = Vector3.Lerp(startLanePos, targetLanePos, _laneChangeProgress)
+                // No clamping during lane change!
+                deviatedPosition = Vector3.Lerp(startLanePos, targetLanePos, smoothProgress)
                     + smoothPos.Tangent * (_currentVecProgress / _currentVecLength) * _currentVecLength;
 
                 if (_laneChangeProgress >= 1.0f)
                 {
-                    // Finish lane change
                     _isChangingLane = false;
                     _currentLaneIndex = _laneChangeTargetIndex;
-                    CurrentSplinePointId = lanes[_currentLaneIndex];
+                    if (_currentLaneIndex >= 0 && _currentLaneIndex < lanes.Length)
+                    {
+                        CurrentSplinePointId = lanes[_currentLaneIndex];
+                    }
                     _indicator = 0;
                     _laneDeviationPhase = Random.Shared.NextSingle() * MathF.Tau;
-                    //Log.Debug("AI {SessionId} completed lane change to {Lane}", EntryCar.SessionId, _currentLaneIndex);
+                    SetDeviationSettings();
+                    Log.Debug("AI {SessionId} completed lane change to {Lane}", EntryCar.SessionId, _currentLaneIndex);
                 }
             }
+        }
+        else
+        {
+            // --- Clamp deviation when not changing lanes ---
+            deviation = Math.Clamp(deviation, -maxLateralOffset, maxLateralOffset);
+            deviatedPosition += right * deviation;
+
+            // Final clamping to lane bounds
+            float lateralOffset = Vector3.Dot(deviatedPosition - smoothPos.Position, right);
+            lateralOffset = Math.Clamp(lateralOffset, -maxLateralOffset, maxLateralOffset);
+            deviatedPosition = smoothPos.Position + right * lateralOffset;
         }
 
         Vector3 rotation = new Vector3
@@ -1285,6 +1300,9 @@ public class AiState
                             | GetWiperSpeed(_weatherManager.CurrentWeather.RainIntensity)
                             | _indicator;
         Status.Gear = 2;
+
+        Log.Debug("AI {SessionId}: deviation={Deviation:F3}, lane={Lane}, splinePoint={SplinePoint}, pos={Position}",
+          EntryCar.SessionId, deviation, _currentLaneIndex, CurrentSplinePointId, Status.Position);
     }
 
     private static float GetTyreAngularSpeed(float speed, float wheelDiameter)
