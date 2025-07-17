@@ -250,9 +250,9 @@ public partial class AiParams : ObservableObject
     public float MinLaneChangeCooldown { get; set; } = 30.0f;
     [YamlMember(Description = "Maximum lane change cooldown in seconds")]
     public float MaxLaneChangeCooldown { get; set; } = 120.0f;
-    [YamlMember(Description = "The required amount of flashes to trigger a lane change.")]
+    [YamlMember(Description = "The required amount of flashes to trigger a lane change")]
     public int RequiredFlashes { get; set; } = 3;
-    [YamlMember(Description = "The amount of time in seconds you must flash your lights to trigger a lane change.")]
+    [YamlMember(Description = "The amount of time in seconds you must flash your lights to trigger a lane change")]
     public int FlashWindow { get; set; } = 5;
 
     [ObservableProperty]
