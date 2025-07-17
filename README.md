@@ -35,11 +35,18 @@ AiParams:
     
     ... # Existing AI parameters remain unchanged
 
-    # New traffic configuration values
+    # Minimum lane change speed in seconds
     MinLaneChangeTime: 4
+    # Maximum lane change speed in seconds
     MaxLaneChangeTime: 7
+    # Minimum lane change cooldown in seconds
     MinLaneChangeCooldown: 30
+    # Maximum lane change cooldown in seconds
     MaxLaneChangeCooldown: 120
+    # The required amount of flashes to trigger a lane change
+    RequiredFlashes: 3
+    # The amount of time in seconds you must flash your lights to trigger a lane change
+    FlashWindow: 5
 ```
 
 ## About HighSpeed.gg
