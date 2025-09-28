@@ -28,6 +28,22 @@ In this custom fork, we have introduced new configuration values to enhance the 
 
 They are placed in the `extra_config.yml` file, which is loaded by the server at startup. You can modify these values to suit your server's needs.
 
+## New User Group Method
+
+```yaml
+# User Group method of Auth. Can either be set to 'file' or 'api'
+UserGroupAuthMethod: api
+# Name and URL of API-based user groups. Only used if UserGroupAuthMethod is set to 'api'
+UserGroupsApi:
+  default_blacklist: <url>
+  default_whitelist: <url>
+  default_admins: <url>
+  T1Users: <url>
+  T2Users: <url>
+  T3Users: <url>
+  Reserved: <url>
+```
+
 ## New Traffic Config Values
 
 ```yaml
