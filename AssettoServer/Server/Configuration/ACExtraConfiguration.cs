@@ -99,7 +99,7 @@ public partial class ACExtraConfiguration : ObservableObject
         { "default_admins", "http://localhost" }
     };
     [YamlMember(Description = "Name and path of file-based user groups should only be used if UserGroupAuthMethod is set to 'file'")]
-    public Dictionary<string, string> UserGroupsFile { get; init; } = new()
+    public Dictionary<string, string> UserGroups { get; init; } = new()
     {
         { "default_blacklist", "blacklist.txt" },
         { "default_whitelist", "whitelist.txt" },

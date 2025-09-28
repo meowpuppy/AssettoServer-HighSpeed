@@ -13,7 +13,7 @@ public class ACServerConfigurationValidator : AbstractValidator<ACServerConfigur
             extra.RuleFor(x => x.RainTrackGripReductionPercent).InclusiveBetween(0, 0.5);
             extra.RuleFor(x => x.EnablePlugins).NotNull();
             extra.RuleFor(x => x.IgnoreConfigurationErrors).NotNull();
-            extra.RuleFor(x => x.UserGroupsFile).NotNull();
+            extra.RuleFor(x => x.UserGroups).NotNull();
             extra.RuleFor(x => x.BlacklistUserGroup).NotEmpty();
             extra.RuleFor(x => x.WhitelistUserGroup).NotEmpty();
             extra.RuleFor(x => x.AdminUserGroup).NotEmpty();

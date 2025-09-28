@@ -17,7 +17,7 @@ public class FileBasedUserGroupProvider : IHostedService, IUserGroupProvider
 
     public FileBasedUserGroupProvider(ACServerConfiguration configuration, FileBasedUserGroup.Factory fileBasedUserGroupFactory)
     {
-        foreach ((string name, string path) in configuration.Extra.UserGroupsFile)
+        foreach ((string name, string path) in configuration.Extra.UserGroups)
         {
             _userGroups.Add(name, fileBasedUserGroupFactory(name, path));
         }
