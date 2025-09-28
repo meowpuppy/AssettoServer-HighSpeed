@@ -279,10 +279,17 @@ public class AiState
             fastLaneOffset = _configuration.Extra.AiParams.RightLaneOffsetMs;
         }
 
-        // Get lane-specific speed multiplier
-        float laneSpeedMultiplier = GetLaneSpeedMultiplier(CurrentSplinePointId, _currentLaneIndex);
+        if (_configuration.Extra.AiParams.UseNewTrafficSystem)
+        {
+            // Get lane-specific speed multiplier
+            float laneSpeedMultiplier = GetLaneSpeedMultiplier(CurrentSplinePointId, _currentLaneIndex);
 
-        InitialMaxSpeed = (_configuration.Extra.AiParams.MaxSpeedMs + fastLaneOffset - (variation / 2) + (float)Random.Shared.NextDouble() * variation) * laneSpeedMultiplier;
+            InitialMaxSpeed = (_configuration.Extra.AiParams.MaxSpeedMs + fastLaneOffset - (variation / 2) + (float)Random.Shared.NextDouble() * variation) * laneSpeedMultiplier;
+        } else
+        {
+            InitialMaxSpeed = _configuration.Extra.AiParams.MaxSpeedMs + fastLaneOffset - (variation / 2) + (float)Random.Shared.NextDouble() * variation;
+        }
+
         CurrentSpeed = InitialMaxSpeed;
         TargetSpeed = InitialMaxSpeed;
         MaxSpeed = InitialMaxSpeed;
@@ -697,9 +704,20 @@ public class AiState
             return;
         }
 
-        float targetSpeed = MaxSpeed; // Use MaxSpeed instead of InitialMaxSpeed
-        float maxSpeed = MaxSpeed;
         bool hasObstacle = false;
+
+        float targetSpeed;
+        float maxSpeed;
+
+        if (_configuration.Extra.AiParams.UseNewTrafficSystem)
+        {
+            targetSpeed = MaxSpeed; // Use MaxSpeed instead of InitialMaxSpeed
+            maxSpeed = MaxSpeed;
+        } else
+        {
+            targetSpeed = InitialMaxSpeed;
+            maxSpeed = InitialMaxSpeed;
+        }
 
         var splineLookahead = SplineLookahead();
         var playerObstacle = FindClosestPlayerObstacle();
@@ -1146,7 +1164,7 @@ public class AiState
         return t * t * t * (t * (t * 6 - 15) + 10);
     }
 
-    public void Update()
+    public void NewTrafficSystemUpdate()
     {
         if (!Initialized)
             return;
@@ -1301,8 +1319,86 @@ public class AiState
                             | _indicator;
         Status.Gear = 2;
 
-        Log.Debug("AI {SessionId}: deviation={Deviation:F3}, lane={Lane}, splinePoint={SplinePoint}, pos={Position}",
-          EntryCar.SessionId, deviation, _currentLaneIndex, CurrentSplinePointId, Status.Position);
+        //Log.Debug("AI {SessionId}: deviation={Deviation:F3}, lane={Lane}, splinePoint={SplinePoint}, pos={Position}",
+        //  EntryCar.SessionId, deviation, _currentLaneIndex, CurrentSplinePointId, Status.Position);
+    }
+
+    public void OldTrafficSystemUpdate()
+    {
+        if (!Initialized)
+            return;
+
+        var ops = _spline.Operations;
+
+        long currentTime = _sessionManager.ServerTimeMilliseconds;
+        long dt = currentTime - _lastTick;
+        _lastTick = currentTime;
+
+        if (Acceleration != 0)
+        {
+            CurrentSpeed += Acceleration * (dt / 1000.0f);
+
+            if ((Acceleration < 0 && CurrentSpeed < TargetSpeed) || (Acceleration > 0 && CurrentSpeed > TargetSpeed))
+            {
+                CurrentSpeed = TargetSpeed;
+                Acceleration = 0;
+            }
+        }
+
+        float moveMeters = (dt / 1000.0f) * CurrentSpeed;
+        if (!Move(_currentVecProgress + moveMeters) || !_junctionEvaluator.TryNext(CurrentSplinePointId, out var nextPoint))
+        {
+            Log.Debug("Car {SessionId} reached spline end, despawning", EntryCar.SessionId);
+            Despawn();
+            return;
+        }
+
+        CatmullRom.CatmullRomPoint smoothPos = CatmullRom.Evaluate(ops.Points[CurrentSplinePointId].Position,
+            ops.Points[nextPoint].Position,
+            _startTangent,
+            _endTangent,
+            _currentVecProgress / _currentVecLength);
+
+        Vector3 rotation = new Vector3
+        {
+            X = MathF.Atan2(smoothPos.Tangent.Z, smoothPos.Tangent.X) - MathF.PI / 2,
+            Y = (MathF.Atan2(new Vector2(smoothPos.Tangent.Z, smoothPos.Tangent.X).Length(), smoothPos.Tangent.Y) - MathF.PI / 2) * -1f,
+            Z = ops.GetCamber(CurrentSplinePointId, _currentVecProgress / _currentVecLength)
+        };
+
+        float tyreAngularSpeed = GetTyreAngularSpeed(CurrentSpeed, EntryCar.TyreDiameterMeters);
+        byte encodedTyreAngularSpeed = (byte)(Math.Clamp(MathF.Round(MathF.Log10(tyreAngularSpeed + 1.0f) * 20.0f) * Math.Sign(tyreAngularSpeed), -100.0f, 154.0f) + 100.0f);
+
+        Status.Timestamp = _sessionManager.ServerTimeMilliseconds;
+        Status.Position = smoothPos.Position with { Y = smoothPos.Position.Y + EntryCar.AiSplineHeightOffsetMeters };
+        Status.Rotation = rotation;
+        Status.Velocity = smoothPos.Tangent * CurrentSpeed;
+        Status.SteerAngle = 127;
+        Status.WheelAngle = 127;
+        Status.TyreAngularSpeed[0] = encodedTyreAngularSpeed;
+        Status.TyreAngularSpeed[1] = encodedTyreAngularSpeed;
+        Status.TyreAngularSpeed[2] = encodedTyreAngularSpeed;
+        Status.TyreAngularSpeed[3] = encodedTyreAngularSpeed;
+        Status.EngineRpm = (ushort)MathUtils.Lerp(EntryCar.AiIdleEngineRpm, EntryCar.AiMaxEngineRpm, CurrentSpeed / _configuration.Extra.AiParams.MaxSpeedMs);
+        Status.StatusFlag = CarStatusFlags.LightsOn
+                            | CarStatusFlags.HighBeamsOff
+                            | (_sessionManager.ServerTimeMilliseconds < _stoppedForCollisionUntil || CurrentSpeed < 20 / 3.6f ? CarStatusFlags.HazardsOn : 0)
+                            | (CurrentSpeed == 0 || Acceleration < 0 ? CarStatusFlags.BrakeLightsOn : 0)
+                            | (_stoppedForObstacle && _sessionManager.ServerTimeMilliseconds > _obstacleHonkStart && _sessionManager.ServerTimeMilliseconds < _obstacleHonkEnd ? CarStatusFlags.Horn : 0)
+                            | GetWiperSpeed(_weatherManager.CurrentWeather.RainIntensity)
+                            | _indicator;
+        Status.Gear = 2;
+    }
+
+    public void Update()
+    {
+        if (_configuration.Extra.AiParams.UseNewTrafficSystem)
+        {
+            NewTrafficSystemUpdate();
+        } else
+        {
+            OldTrafficSystemUpdate();
+        }
     }
 
     private static float GetTyreAngularSpeed(float speed, float wheelDiameter)

@@ -7,20 +7,26 @@ namespace AssettoServer.Server.UserGroup;
 public class UserGroupManager
 {
     private readonly IList<IUserGroupProvider> _providers;
+    private readonly ACExtraConfiguration _extraConfig;
 
-    public UserGroupManager(IList<IUserGroupProvider> providers)
+    public UserGroupManager(IList<IUserGroupProvider> providers, ACServerConfiguration configuration)
     {
         _providers = providers;
+        _extraConfig = configuration.Extra;
     }
 
     public bool TryResolve(string name, [NotNullWhen(true)] out IUserGroup? group)
     {
+        var method = _extraConfig.UserGroupAuthMethod.ToLowerInvariant();
         foreach (var provider in _providers)
         {
-            group = provider.Resolve(name);
-            if (group != null)
+            // Only use the provider matching the configured method
+            if ((method == "file" && provider is FileBasedUserGroupProvider) ||
+                (method == "api" && provider is ApiBasedUserGroupProvider))
             {
-                return true;
+                group = provider.Resolve(name);
+                if (group != null)
+                    return true;
             }
         }
 

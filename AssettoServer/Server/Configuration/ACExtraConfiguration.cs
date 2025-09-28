@@ -89,8 +89,17 @@ public partial class ACExtraConfiguration : ObservableObject
     public bool? EnableUPnP { get; init; } = false;
     [YamlMember(Description = "URL of custom loading screen image. Requires CSP 0.1.80+ and a recent version of Content Manager")]
     public string? LoadingImageUrl { get; set; }
-    [YamlMember(Description = "Name and path of file-based user groups")]
-    public Dictionary<string, string> UserGroups { get; init; } = new()
+    [YamlMember(Description = "User Group method of Auth. Can either be set to 'file' or 'api'")]
+    public string UserGroupAuthMethod { get; init; } = "file";
+    [YamlMember(Description = "Name and URL of API-based user groups. Only used if UserGroupAuthMethod is set to 'api'")]
+    public Dictionary<string, string>? UserGroupsApi { get; init; } = new()
+    {
+        { "default_blacklist", "http://localhost" },
+        { "default_whitelist", "http://localhost" },
+        { "default_admins", "http://localhost" }
+    };
+    [YamlMember(Description = "Name and path of file-based user groups should only be used if UserGroupAuthMethod is set to 'file'")]
+    public Dictionary<string, string> UserGroupsFile { get; init; } = new()
     {
         { "default_blacklist", "blacklist.txt" },
         { "default_whitelist", "whitelist.txt" },
@@ -111,7 +120,6 @@ public partial class ACExtraConfiguration : ObservableObject
 
     [YamlIgnore] public int MaxAfkTimeMilliseconds => MaxAfkTimeMinutes * 60_000;
     [YamlIgnore] public string Path { get; private set; } = null!;
-
     public void ToFile(string path)
     {
         using var stream = File.CreateText(path);
@@ -206,6 +214,7 @@ public class LokiSettings
 [UsedImplicitly(ImplicitUseKindFlags.Assign, ImplicitUseTargetFlags.WithMembers)]
 public partial class AiParams : ObservableObject
 {
+    public bool UseNewTrafficSystem { get; set; } = false;
     [YamlMember(Description = "Radius around a player in which AI cars won't despawn")]
     public float PlayerRadiusMeters { get; set; } = 200.0f;
     [YamlMember(Description = "Offset the player radius in direction of the velocity of the player so AI cars will despawn earlier behind a player")]
