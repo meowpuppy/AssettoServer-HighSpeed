@@ -108,6 +108,14 @@ local function tab_About()
         ui.sameLine()
         ui_hyperlink("https://patreon.com/assettoserver")
 
+        ui.text("")
+        ui.pushFont(ui.Font.Title)
+        ui.textWrapped("This server is run by HighSpeed.gg")
+        ui.popFont()
+        ui.textWrapped("Discord:")
+        ui.sameLine()
+        ui_hyperlink("https://discord.gg/highspeed")
+
         if isSRP then
             ui.offsetCursorY(10)
             ui.image(srpLogoUrl, srpLogoSize)
