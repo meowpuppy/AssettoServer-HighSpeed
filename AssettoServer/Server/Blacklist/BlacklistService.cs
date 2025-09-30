@@ -28,22 +28,22 @@ public class BlacklistService : IBlacklistService
 
     public async Task<bool> IsBlacklistedAsync(ulong guid)
     {
-        if (_configuration.Extra.UserGroupAuthMethod.Equals("api"))
-        {
-            // rerun ApiBasedUserGroup load to ensure we have the latest data
-            if (_userGroup is ApiBasedUserGroup apiBasedUserGroup)
-            {
-                try
-                {
-                    await apiBasedUserGroup.LoadAsync();
-                }
-                catch (HttpRequestException ex)
-                {
-                    Log.Error(ex, "Failed to refresh API-based user group for blacklist check.");
-                    return false;
-                }
-            }
-        }
+        //if (_configuration.Extra.UserGroupAuthMethod.Equals("api"))
+        //{
+        //    // rerun ApiBasedUserGroup load to ensure we have the latest data
+        //    if (_userGroup is ApiBasedUserGroup apiBasedUserGroup)
+        //    {
+        //        try
+        //        {
+        //            await apiBasedUserGroup.LoadAsync();
+        //        }
+        //        catch (HttpRequestException ex)
+        //        {
+        //            Log.Error(ex, "Failed to refresh API-based user group for blacklist check.");
+        //            return false;
+        //        }
+        //    }
+        //}
 
         return await _userGroup.ContainsAsync(guid);
     }

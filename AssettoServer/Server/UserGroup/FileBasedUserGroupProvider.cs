@@ -53,4 +53,12 @@ public class FileBasedUserGroupProvider : IHostedService, IUserGroupProvider
         
         return Task.CompletedTask;
     }
+
+    public async Task ReloadAllAsync()
+    {
+        foreach (var group in _userGroups.Values)
+        {
+            await group.LoadAsync();
+        }
+    }
 }
